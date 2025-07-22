@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy source code and configuration
-COPY pyproject.toml ./
+COPY pyproject.toml LICENSE ./
 COPY src/ ./src/
 
 # Install Python dependencies
