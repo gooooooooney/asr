@@ -3,15 +3,15 @@ FROM python:3.11-slim AS builder
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+  PYTHONDONTWRITEBYTECODE=1 \
+  PIP_NO_CACHE_DIR=1 \
+  PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
-    build-essential \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+  build-essential \
+  curl \
+  && rm -rf /var/lib/apt/lists/*
 
 # Set work directory
 WORKDIR /app
@@ -28,13 +28,13 @@ FROM python:3.11-slim AS production
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PATH="/app/.venv/bin:$PATH"
+  PYTHONDONTWRITEBYTECODE=1 \
+  PATH="/app/.venv/bin:$PATH"
 
 # Install system runtime dependencies
 RUN apt-get update && apt-get install -y \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+  curl \
+  && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
 RUN groupadd -r appuser && useradd -r -g appuser appuser
@@ -48,14 +48,14 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy application code
 COPY src/ ./src/
-COPY pyproject.toml ./
+COPY pyproject.toml LICENSE ./
 
 # Install the application
 RUN pip install -e .
 
 # Create necessary directories
 RUN mkdir -p data/audio data/logs data/temp && \
-    chown -R appuser:appuser /app
+  chown -R appuser:appuser /app
 
 # Switch to non-root user
 USER appuser
@@ -65,7 +65,7 @@ EXPOSE 8000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+  CMD curl -f http://localhost:8000/health || exit 1
 
 # Default command
 CMD ["asr-api", "serve"]
