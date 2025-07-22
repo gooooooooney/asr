@@ -17,11 +17,11 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy source code and configuration
-COPY pyproject.toml LICENSE ./
+COPY pyproject.toml LICENSE README.md ./
 COPY src/ ./src/
 
 # Install Python dependencies
-RUN pip install -e .
+RUN pip install .
 
 # Production stage
 FROM python:3.11-slim AS production
@@ -48,10 +48,10 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy application code
 COPY src/ ./src/
-COPY pyproject.toml LICENSE ./
+COPY pyproject.toml LICENSE README.md ./
 
 # Install the application
-RUN pip install -e .
+RUN pip install .
 
 # Create necessary directories
 RUN mkdir -p data/audio data/logs data/temp && \
