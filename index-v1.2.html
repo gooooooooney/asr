@@ -1,0 +1,1612 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>AI 语音笔记 V1.2</title>
+    <style>
+        :root {
+            --fab-height: 50px;
+            --fab-initial-width: 80px;
+            --fab-long-width: 50vw;
+            --fab-bottom-position: 15vh;
+            --dialog-bottom-margin: 15px;
+            --primary-bg: #ffffff;
+            --secondary-bg: #f5f5f5;
+            --primary-text: #000000;
+            --border-color: #e0e0e0;
+            --highlight-color: #007aff;
+            --tag-bg: #eef5ff;
+            --tag-text: #005fcc;
+            --mention-bg: #e6f6e6;
+            --mention-text: #006400;
+            --function-bg: #f3e8ff;
+            --function-text: #5d3d9c;
+            --duration: 0.3s;
+            --long-press-anim-duration: 2.1s;
+        }
+
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--secondary-bg);
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #app-container {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #top-bar-container {
+            position: sticky;
+            top: 0;
+            background-color: var(--secondary-bg);
+            padding: 10px 15px;
+            z-index: 998;
+            border-bottom: 1px solid var(--border-color);
+            flex-shrink: 0;
+            position: relative;
+        }
+
+        #search-bar {
+            width: 100%;
+            padding: 10px 15px;
+            border-radius: 20px;
+            border: 1px solid var(--border-color);
+            font-size: 16px;
+            box-sizing: border-box;
+            background-color: var(--primary-bg);
+        }
+        #search-bar:focus {
+            outline: none;
+            border-color: var(--highlight-color);
+        }
+
+        #summary-dialog {
+            font-size: 14px;
+            color: #555;
+            min-height: 20px;
+            display: none;
+        }
+        #summary-dialog.visible {
+            display: block;
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90vw;
+            max-width: 600px;
+            background-color: var(--primary-bg);
+            border-radius: 12px;
+            padding: 12px 16px;
+            margin-top: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            z-index: 999;
+            box-sizing: border-box;
+        }
+
+        #main-content {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 15px;
+            padding-bottom: calc(var(--fab-bottom-position) + var(--fab-height) + 20px);
+            box-sizing: border-box;
+        }
+
+        .note-card {
+            background-color: var(--primary-bg);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            border: 2px solid transparent;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+            position: relative;
+            cursor: pointer;
+        }
+
+        .note-card.selected {
+            border-color: var(--highlight-color);
+            box-shadow: 0 4px 12px rgba(0, 122, 255, 0.2);
+        }
+
+        .card-pills-bar {
+            display: flex;
+            overflow-x: auto;
+            white-space: nowrap;
+            padding-bottom: 12px;
+            margin-bottom: 12px;
+            border-bottom: 1px solid var(--border-color);
+            gap: 8px;
+        }
+        .card-pills-bar::-webkit-scrollbar { display: none; }
+        .card-pills-bar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        .card-text {
+            color: var(--primary-text);
+            font-size: 15px;
+            line-height: 1.7;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .audio-player {
+            position: absolute;
+            top: 0;
+            left: 0;
+            transform: translate(-6px, -50%);
+            background-color: #f0f0f0;
+            color: var(--primary-text);
+            border: none;
+            border-radius: 6px;
+            padding: 4px 0;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            width: 8.33%;
+            min-width: 40px;
+            text-align: center;
+            transition: background-color 0.2s, transform 0.2s ease;
+            z-index: 1;
+        }
+        .audio-player:hover {
+            background-color: #e0e0e0;
+            transform: translate(-6px, -50%) scale(1.05);
+        }
+
+        #fab {
+            position: fixed;
+            left: 50%;
+            bottom: var(--fab-bottom-position);
+            transform: translateX(-50%);
+            height: var(--fab-height);
+            width: var(--fab-initial-width);
+            background-color: var(--primary-bg);
+            border-radius: calc(var(--fab-height) / 2);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+            transition: width var(--duration) ease, background-color var(--duration) ease;
+            overflow: hidden;
+            z-index: 999;
+        }
+        #fab.growing {
+            transition: width var(--long-press-anim-duration) linear;
+            width: var(--fab-long-width);
+        }
+        #fab.manual-mode {
+            width: var(--fab-long-width);
+        }
+
+        .fab-content {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+            color: var(--primary-text);
+            font-weight: 500;
+            font-size: 14px;
+        }
+        #fab.active .fab-content.active {
+            display: flex;
+        }
+
+        .waveform span {
+            width: 3px;
+            height: 5px;
+            margin: 0 2px;
+            background-color: var(--primary-text);
+            border-radius: 2px;
+            animation: wave 1.2s infinite ease-in-out;
+            display: inline-block;
+        }
+        .waveform span:nth-child(1) { animation-delay: -1.2s; }
+        .waveform span:nth-child(2) { animation-delay: -1.0s; }
+        .waveform span:nth-child(3) { animation-delay: -0.8s; }
+        .waveform span:nth-child(4) { animation-delay: -0.6s; }
+        .waveform span:nth-child(5) { animation-delay: -0.4s; }
+        @keyframes wave {
+            0%, 40%, 100% { transform: scaleY(1.0); }
+            20% { transform: scaleY(3.0); }
+        }
+
+        .fab-button-group {
+            display: flex;
+            width: 100%;
+            height: 100%;
+            align-items: center;
+            justify-content: space-around;
+        }
+        .fab-button {
+            flex: 1;
+            text-align: center;
+        }
+        .fab-divider {
+            width: 1px;
+            height: 40%;
+            background-color: var(--border-color);
+        }
+
+        .dialog {
+            position: fixed;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: var(--primary-bg);
+            border-radius: 16px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+            padding: 20px;
+            box-sizing: border-box;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity var(--duration) ease, transform var(--duration) ease, visibility var(--duration) ease;
+            z-index: 1000;
+        }
+        .dialog.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        #note-dialog, #edit-dialog {
+            bottom: calc(var(--fab-bottom-position) + var(--fab-height) + var(--dialog-bottom-margin));
+            width: 90vw;
+            max-width: 600px;
+        }
+
+        .dialog-content {
+            position: relative;
+        }
+
+        #note-text, #edit-text {
+            width: 100%;
+            min-height: 120px;
+            max-height: 300px;
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 16px;
+            line-height: 1.5;
+            resize: none;
+            overflow-y: auto;
+            box-sizing: border-box;
+        }
+        #note-text:focus, #edit-text:focus {
+            outline: none;
+            border-color: var(--highlight-color);
+        }
+
+        .button-row {
+            display: flex;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .dialog-button {
+            padding: 8px 16px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background-color: var(--primary-bg);
+            color: var(--primary-text);
+            font-size: 14px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        .dialog-button:hover {
+            background-color: var(--secondary-bg);
+        }
+
+        .batch-operation-view {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            display: none;
+            z-index: 1100;
+        }
+        .batch-operation-view.visible {
+            display: flex;
+        }
+
+        .batch-left-section {
+            flex: 1;
+            padding: 40px;
+            overflow-y: auto;
+        }
+
+        .batch-right-section {
+            width: 300px;
+            background-color: var(--primary-bg);
+            padding: 40px 30px;
+            box-shadow: -4px 0 20px rgba(0,0,0,0.1);
+        }
+
+        .batch-card-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .batch-card-item {
+            background-color: var(--primary-bg);
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+
+        .batch-operations {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .batch-operation-button {
+            padding: 15px 20px;
+            border: none;
+            border-radius: 8px;
+            background-color: var(--primary-bg);
+            color: var(--primary-text);
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.2s ease, transform 0.2s ease;
+            text-align: left;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        .batch-operation-button:hover {
+            background-color: var(--secondary-bg);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+        }
+
+        #mcp-panel {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 50vh;
+            background-color: var(--primary-bg);
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.1);
+            transform: translateY(100%);
+            transition: transform var(--duration) ease;
+            z-index: 1050;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        #mcp-panel.visible {
+            transform: translateY(0);
+        }
+
+        .mcp-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 20px;
+            padding: 20px 0;
+        }
+
+        .mcp-app-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 120px;
+            background-color: var(--secondary-bg);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .mcp-app-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .suggestion-popup {
+            position: absolute;
+            background-color: var(--primary-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1010;
+            display: none;
+        }
+        .suggestion-popup.visible {
+            display: block;
+        }
+
+        .suggestion-item {
+            padding: 10px 15px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        .suggestion-item:hover,
+        .suggestion-item.highlighted {
+            background-color: var(--secondary-bg);
+        }
+
+        .pill {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 16px;
+            font-size: 14px;
+            margin-right: 6px;
+            cursor: default;
+        }
+        .pill.tag {
+            background-color: var(--tag-bg);
+            color: var(--tag-text);
+        }
+        .pill.mention {
+            background-color: var(--mention-bg);
+            color: var(--mention-text);
+        }
+        .pill.function {
+            background-color: var(--function-bg);
+            color: var(--function-text);
+        }
+
+        /* Meeting Agent Mode Styles */
+        .meeting-agent-ripple {
+            position: fixed;
+            inset: -20px;
+            border: 40px solid rgba(59, 130, 246, 0.15);
+            border-radius: 20px;
+            animation: ripple 4s ease-in-out infinite;
+            pointer-events: none;
+            z-index: 1;
+            display: none;
+        }
+
+        @keyframes ripple {
+            0% {
+                transform: scale(0.9);
+                opacity: 0.1;
+            }
+            50% {
+                transform: scale(1.05);
+                opacity: 0.2;
+            }
+            100% {
+                transform: scale(0.9);
+                opacity: 0.1;
+            }
+        }
+
+        .meeting-agent-mode .meeting-agent-ripple {
+            display: block;
+        }
+
+        /* Intent Recognition Panel */
+        .intent-panel {
+            position: fixed;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 280px;
+            max-height: 60vh;
+            background-color: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            padding: 20px;
+            overflow-y: auto;
+            display: none;
+            z-index: 950;
+        }
+
+        .meeting-agent-mode .intent-panel {
+            display: block;
+        }
+
+        .intent-item {
+            padding: 12px;
+            margin-bottom: 10px;
+            background-color: rgba(227, 242, 253, 0.8);
+            border-left: 4px solid #2196f3;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .intent-item.duplicate {
+            opacity: 0.6;
+            border-left-color: #f39c12;
+        }
+
+        /* Search Results Panel */
+        .search-panel {
+            position: fixed;
+            left: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 320px;
+            max-height: 60vh;
+            background-color: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            padding: 20px;
+            overflow-y: auto;
+            display: none;
+            z-index: 950;
+        }
+
+        .meeting-agent-mode .search-panel {
+            display: block;
+        }
+
+        .search-result-item {
+            padding: 12px;
+            margin-bottom: 10px;
+            background-color: rgba(255, 255, 255, 0.8);
+            border: 1px solid rgba(224, 224, 224, 0.8);
+            border-radius: 8px;
+        }
+
+        .search-result-item h4 {
+            margin: 0 0 8px 0;
+            color: #1976d2;
+            font-size: 14px;
+        }
+
+        .search-result-item p {
+            margin: 0;
+            font-size: 13px;
+            color: #555;
+        }
+
+        .source-tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            margin-left: 8px;
+            font-weight: bold;
+        }
+
+        .source-tag.rag {
+            background-color: #3498db;
+            color: white;
+        }
+
+        .source-tag.external {
+            background-color: #95a5a6;
+            color: white;
+        }
+
+        /* VAD Indicator */
+        .vad-indicator {
+            position: fixed;
+            bottom: calc(var(--fab-bottom-position) + var(--fab-height) + 20px);
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 5px 10px;
+            border-radius: 20px;
+            background-color: #ecf0f1;
+            font-size: 12px;
+            transition: all 0.3s;
+            opacity: 0;
+            visibility: hidden;
+        }
+
+        .meeting-agent-mode .vad-indicator {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .vad-indicator.active {
+            background-color: #2ecc71;
+            color: white;
+        }
+
+        /* Wake Word Indicator */
+        .wake-indicator {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: #2ecc71;
+            color: white;
+            padding: 15px 25px;
+            border-radius: 25px;
+            font-weight: bold;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            animation: slideIn 0.3s ease-out;
+            z-index: 1000;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        /* Settings Panel for Gemini API */
+        .settings-panel {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            z-index: 1001;
+            min-width: 400px;
+            display: none;
+        }
+
+        .settings-panel.visible {
+            display: block;
+        }
+
+        .setting-item {
+            margin-bottom: 15px;
+        }
+
+        .setting-item label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        .setting-item input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .settings-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+
+        .settings-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .settings-btn-primary {
+            background-color: #3498db;
+            color: white;
+        }
+
+        .settings-btn-secondary {
+            background-color: #95a5a6;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <!-- Main App Container -->
+    <div id="app-container">
+        <div id="top-bar-container">
+            <input type="text" id="search-bar" placeholder="搜索笔记或 #标签">
+            <div id="summary-dialog"></div>
+        </div>
+        <div id="main-content">
+            <!-- Note cards will be inserted here -->
+        </div>
+    </div>
+
+    <!-- FAB -->
+    <div id="fab" class="active">
+        <div class="fab-content active" id="fab-initial">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="23"/>
+                <line x1="8" y1="23" x2="16" y2="23"/>
+            </svg>
+        </div>
+        <div class="fab-content" id="fab-waveform">
+            <div class="waveform">
+                <span></span><span></span><span></span><span></span><span></span>
+            </div>
+        </div>
+        <div class="fab-content" id="fab-pause">
+            <span>暂停</span>
+        </div>
+        <div class="fab-content" id="fab-buttons">
+            <div class="fab-button-group">
+                <div class="fab-button" id="fab-record">录音</div>
+                <div class="fab-divider"></div>
+                <div class="fab-button" id="fab-send">发送</div>
+            </div>
+        </div>
+        <div class="fab-content" id="fab-manual-buttons">
+            <div class="fab-button-group">
+                <div class="fab-button" id="fab-manual-record">录音</div>
+                <div class="fab-divider"></div>
+                <div class="fab-button" id="fab-manual-send">发送</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Note Dialog -->
+    <div id="note-dialog" class="dialog">
+        <div class="dialog-content">
+            <textarea id="note-text" placeholder="开始说话或输入文字..."></textarea>
+            <div class="button-row">
+                <button class="dialog-button" id="upload-image-btn">上传图片</button>
+                <button class="dialog-button" id="add-header-btn">添加Header</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Dialog -->
+    <div id="edit-dialog" class="dialog">
+        <div class="dialog-content">
+            <textarea id="edit-text"></textarea>
+            <div class="button-row">
+                <button class="dialog-button" id="save-edit-btn">保存</button>
+                <button class="dialog-button" id="cancel-edit-btn">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Batch Operation View -->
+    <div id="batch-operation-view" class="batch-operation-view">
+        <div class="batch-left-section">
+            <div class="batch-card-list" id="batch-card-list"></div>
+        </div>
+        <div class="batch-right-section">
+            <div class="batch-operations">
+                <button class="batch-operation-button">AI合并笔记</button>
+                <button class="batch-operation-button">转发到微信/小红书</button>
+                <button class="batch-operation-button">AI搜索</button>
+                <button class="batch-operation-button">创建新分类</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MCP Panel -->
+    <div id="mcp-panel">
+        <h3 style="margin-bottom: 20px;">MCP 应用中心</h3>
+        <div class="mcp-grid">
+            <div class="mcp-app-card">AI 摘要</div>
+            <div class="mcp-app-card">任务清单</div>
+            <div class="mcp-app-card">图表生成</div>
+            <div class="mcp-app-card">会议助手</div>
+            <div class="mcp-app-card">灵感白板</div>
+        </div>
+    </div>
+
+    <!-- Suggestion Popup -->
+    <div id="suggestion-popup" class="suggestion-popup"></div>
+
+    <!-- Meeting Agent Mode Elements -->
+    <div class="meeting-agent-ripple"></div>
+
+    <div class="intent-panel" id="intent-panel">
+        <h3 style="margin-bottom: 15px; font-size: 16px;">意图识别</h3>
+        <div id="intent-list"></div>
+    </div>
+
+    <div class="search-panel" id="search-panel">
+        <h3 style="margin-bottom: 15px; font-size: 16px;">搜索结果</h3>
+        <div id="search-list"></div>
+    </div>
+
+    <div class="vad-indicator" id="vad-indicator">VAD: 静音</div>
+
+    <!-- Settings Panel -->
+    <div id="settings-panel" class="settings-panel">
+        <h3>设置</h3>
+        <div class="setting-item">
+            <label for="gemini-api-key">Gemini API Key:</label>
+            <input type="password" id="gemini-api-key" placeholder="输入你的Gemini API密钥">
+        </div>
+        <div class="settings-buttons">
+            <button class="settings-btn settings-btn-secondary" id="close-settings">关闭</button>
+            <button class="settings-btn settings-btn-primary" id="save-settings">保存</button>
+        </div>
+    </div>
+
+    <!-- Load meeting tool modules -->
+    <script src="meeting-tool/public/ten_vad_loader.js"></script>
+    <script type="module">
+        // Import meeting tool modules
+        import { SpeechRecognitionManager } from './meeting-tool/src/speechRecognition.js';
+        import { TenVADManager } from './meeting-tool/src/tenVad.js';
+        import { GeminiIntentDetector } from './meeting-tool/src/geminiIntentDetector.js';
+        import { SearchManager } from './meeting-tool/src/searchManager.js';
+        import { TTSManager } from './meeting-tool/src/tts.js';
+        import { WakeWordDetector } from './meeting-tool/src/wakeWord.js';
+
+        class VoiceNoteApp {
+            constructor() {
+                // FAB interaction states
+                this.longPressTimer = null;
+                this.longPressStartTime = 0;
+                this.isLongPressing = false;
+                this.isRecording = false;
+                this.clickCount = 0;
+                this.clickTimer = null;
+                this.tripleClickTime = 500;
+                this.doubleClickTime = 300;
+                this.lastClickTime = 0;
+                
+                // Meeting Agent Mode
+                this.isInMeetingAgentMode = false;
+                this.meetingAgentActive = false;
+                
+                // Meeting tool instances
+                this.speechRecognition = null;
+                this.vad = null;
+                this.intentDetector = null;
+                this.searchManager = null;
+                this.tts = null;
+                this.wakeWordDetector = null;
+                
+                // Transcript management
+                this.currentTranscript = '';
+                this.lastProcessedLength = 0;
+                
+                // Note management
+                this.notes = [];
+                this.selectedNotes = [];
+                this.editingNoteId = null;
+                
+                // Initialize UI elements
+                this.initializeElements();
+                this.setupEventListeners();
+                
+                // Load saved data
+                this.loadNotes();
+                this.checkGeminiApiKey();
+            }
+
+            initializeElements() {
+                // FAB elements
+                this.fab = document.getElementById('fab');
+                this.fabInitial = document.getElementById('fab-initial');
+                this.fabWaveform = document.getElementById('fab-waveform');
+                this.fabPause = document.getElementById('fab-pause');
+                this.fabButtons = document.getElementById('fab-buttons');
+                this.fabManualButtons = document.getElementById('fab-manual-buttons');
+                
+                // Dialog elements
+                this.noteDialog = document.getElementById('note-dialog');
+                this.noteText = document.getElementById('note-text');
+                this.summaryDialog = document.getElementById('summary-dialog');
+                
+                // Main content
+                this.mainContent = document.getElementById('main-content');
+                
+                // Meeting Agent elements
+                this.intentPanel = document.getElementById('intent-panel');
+                this.searchPanel = document.getElementById('search-panel');
+                this.vadIndicator = document.getElementById('vad-indicator');
+                this.intentList = document.getElementById('intent-list');
+                this.searchList = document.getElementById('search-list');
+                
+                // Settings
+                this.settingsPanel = document.getElementById('settings-panel');
+                this.geminiApiKeyInput = document.getElementById('gemini-api-key');
+            }
+
+            setupEventListeners() {
+                // FAB interactions
+                this.fab.addEventListener('mousedown', (e) => this.handleFabMouseDown(e));
+                this.fab.addEventListener('mouseup', (e) => this.handleFabMouseUp(e));
+                this.fab.addEventListener('mouseleave', (e) => this.handleFabMouseLeave(e));
+                this.fab.addEventListener('click', (e) => this.handleFabClick(e));
+                
+                // Touch events for mobile
+                this.fab.addEventListener('touchstart', (e) => this.handleFabMouseDown(e));
+                this.fab.addEventListener('touchend', (e) => this.handleFabMouseUp(e));
+                
+                // FAB button clicks
+                document.getElementById('fab-pause').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.pauseRecording();
+                });
+                
+                document.getElementById('fab-record').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.resumeRecording();
+                });
+                
+                document.getElementById('fab-send').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.sendNote();
+                });
+                
+                document.getElementById('fab-manual-record').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.startManualRecording();
+                });
+                
+                document.getElementById('fab-manual-send').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.sendNote();
+                });
+                
+                // Note text area
+                this.noteText.addEventListener('click', () => {
+                    if (this.isRecording) {
+                        this.pauseRecording();
+                    }
+                });
+                
+                // Settings
+                document.getElementById('save-settings').addEventListener('click', () => this.saveSettings());
+                document.getElementById('close-settings').addEventListener('click', () => this.closeSettings());
+                
+                // Global ESC key
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape') {
+                        this.handleEscape();
+                    }
+                });
+            }
+
+            handleFabMouseDown(e) {
+                e.preventDefault();
+                this.longPressStartTime = Date.now();
+                this.isLongPressing = true;
+                
+                // Start long press detection
+                this.longPressTimer = setTimeout(() => {
+                    if (this.isLongPressing) {
+                        this.startLongPress();
+                    }
+                }, 250);
+            }
+
+            handleFabMouseUp(e) {
+                e.preventDefault();
+                const pressDuration = Date.now() - this.longPressStartTime;
+                
+                if (this.longPressTimer) {
+                    clearTimeout(this.longPressTimer);
+                }
+                
+                if (this.isLongPressing && pressDuration >= 250) {
+                    // Long press release
+                    this.handleLongPressRelease(pressDuration);
+                }
+                
+                this.isLongPressing = false;
+                this.fab.classList.remove('growing');
+            }
+
+            handleFabMouseLeave(e) {
+                if (this.isLongPressing) {
+                    this.handleFabMouseUp(e);
+                }
+            }
+
+            handleFabClick(e) {
+                const currentTime = Date.now();
+                const timeSinceLastClick = currentTime - this.lastClickTime;
+                
+                // Count clicks
+                if (timeSinceLastClick < this.tripleClickTime) {
+                    this.clickCount++;
+                } else {
+                    this.clickCount = 1;
+                }
+                
+                this.lastClickTime = currentTime;
+                
+                // Clear previous timer
+                if (this.clickTimer) {
+                    clearTimeout(this.clickTimer);
+                }
+                
+                // Set timer to process clicks
+                this.clickTimer = setTimeout(() => {
+                    if (this.clickCount === 1) {
+                        // Single click - check if it's a short press
+                        const pressDuration = Date.now() - this.longPressStartTime;
+                        if (pressDuration < 250) {
+                            this.handleShortPress();
+                        }
+                    } else if (this.clickCount === 2) {
+                        // Double click - Meeting Agent Mode
+                        this.toggleMeetingAgentMode();
+                    } else if (this.clickCount >= 3) {
+                        // Triple click - Advanced Summary Mode
+                        this.startAdvancedSummaryMode();
+                    }
+                    this.clickCount = 0;
+                }, this.tripleClickTime);
+            }
+
+            startLongPress() {
+                // Start recording
+                this.isRecording = true;
+                this.fab.classList.add('growing');
+                this.startRecording();
+            }
+
+            handleLongPressRelease(duration) {
+                if (duration < 800) {
+                    // Too short
+                    this.showMessage('录音时间过短');
+                    this.stopRecording();
+                    this.resetFab();
+                } else if (duration < 2500) {
+                    // Quick note
+                    this.createQuickNote();
+                } else {
+                    // Full note mode
+                    this.enterFullNoteMode();
+                }
+            }
+
+            handleShortPress() {
+                // Manual note mode
+                this.enterManualNoteMode();
+            }
+
+            startAdvancedSummaryMode() {
+                // Show both note dialog and summary dialog
+                this.noteDialog.classList.add('visible');
+                this.summaryDialog.classList.add('visible');
+                
+                // Initialize meeting tools for ASR and summary
+                this.initializeMeetingTools(false); // false = no intent detection
+                
+                // Update FAB
+                this.updateFabState('pause');
+                
+                // Start recording
+                this.startRecording();
+            }
+
+            toggleMeetingAgentMode() {
+                if (this.isInMeetingAgentMode) {
+                    this.exitMeetingAgentMode();
+                } else {
+                    this.enterMeetingAgentMode();
+                }
+            }
+
+            enterMeetingAgentMode() {
+                this.isInMeetingAgentMode = true;
+                document.body.classList.add('meeting-agent-mode');
+                
+                // Show dialogs
+                this.noteDialog.classList.add('visible');
+                this.summaryDialog.classList.add('visible');
+                
+                // Initialize all meeting tools
+                this.initializeMeetingTools(true); // true = full features
+                
+                // Update FAB
+                this.updateFabState('pause');
+                
+                // Start recording
+                this.startRecording();
+            }
+
+            exitMeetingAgentMode() {
+                this.isInMeetingAgentMode = false;
+                document.body.classList.remove('meeting-agent-mode');
+                
+                // Stop recording
+                if (this.isRecording) {
+                    this.stopRecording();
+                }
+                
+                // Hide dialogs
+                this.noteDialog.classList.remove('visible');
+                this.summaryDialog.classList.remove('visible');
+                
+                // Clear meeting agent UI
+                this.intentList.innerHTML = '';
+                this.searchList.innerHTML = '';
+                
+                // Reset FAB
+                this.resetFab();
+            }
+
+            enterManualNoteMode() {
+                this.noteDialog.classList.add('visible');
+                this.fab.classList.add('manual-mode');
+                this.updateFabState('manual-buttons');
+                this.noteText.focus();
+            }
+
+            enterFullNoteMode() {
+                this.noteDialog.classList.add('visible');
+                this.updateFabState('pause');
+            }
+
+            initializeMeetingTools(fullFeatures = false) {
+                // Always initialize ASR
+                if (!this.speechRecognition) {
+                    this.speechRecognition = new SpeechRecognitionManager();
+                    this.speechRecognition.on('transcript', (text) => this.handleTranscript(text));
+                    this.speechRecognition.on('error', (error) => this.handleError(error));
+                }
+                
+                if (fullFeatures) {
+                    // Initialize all features for Meeting Agent Mode
+                    if (!this.vad) {
+                        this.vad = new TenVADManager();
+                        this.vad.on('speechStart', () => this.handleSpeechStart());
+                        this.vad.on('speechEnd', () => this.handleSpeechEnd());
+                    }
+                    
+                    if (!this.intentDetector) {
+                        this.intentDetector = new GeminiIntentDetector();
+                        const apiKey = localStorage.getItem('geminiApiKey');
+                        if (apiKey) {
+                            this.intentDetector.setGeminiApiKey(apiKey);
+                        }
+                        this.intentDetector.on('intent', (intent) => this.handleIntent(intent));
+                    }
+                    
+                    if (!this.searchManager) {
+                        this.searchManager = new SearchManager();
+                        const apiKey = localStorage.getItem('geminiApiKey');
+                        if (apiKey) {
+                            this.searchManager.setGeminiApiKey(apiKey);
+                        }
+                    }
+                    
+                    if (!this.tts) {
+                        this.tts = new TTSManager();
+                    }
+                    
+                    if (!this.wakeWordDetector) {
+                        this.wakeWordDetector = new WakeWordDetector();
+                        this.wakeWordDetector.on('wakeWordDetected', () => this.handleWakeWord());
+                    }
+                }
+            }
+
+            async startRecording() {
+                try {
+                    this.isRecording = true;
+                    
+                    // Start ASR
+                    if (this.speechRecognition) {
+                        await this.speechRecognition.start();
+                    }
+                    
+                    // Start VAD if in meeting agent mode
+                    if (this.isInMeetingAgentMode && this.vad) {
+                        await this.vad.start();
+                    }
+                    
+                    this.updateFabState('waveform');
+                } catch (error) {
+                    console.error('Failed to start recording:', error);
+                    this.handleError(error);
+                }
+            }
+
+            stopRecording() {
+                this.isRecording = false;
+                
+                if (this.speechRecognition) {
+                    this.speechRecognition.stop();
+                }
+                
+                if (this.vad) {
+                    this.vad.stop();
+                }
+            }
+
+            pauseRecording() {
+                this.stopRecording();
+                this.updateFabState('buttons');
+            }
+
+            resumeRecording() {
+                this.startRecording();
+                this.updateFabState('pause');
+            }
+
+            startManualRecording() {
+                this.startRecording();
+                this.updateFabState('pause');
+            }
+
+            handleTranscript(text) {
+                this.currentTranscript = text;
+                this.noteText.value = text;
+                
+                // Update summary if in advanced mode
+                if (this.summaryDialog.classList.contains('visible')) {
+                    this.updateSummary(text);
+                }
+                
+                // Check for function calls in meeting agent mode
+                if (this.isInMeetingAgentMode) {
+                    const newText = text.substring(this.lastProcessedLength);
+                    if (newText.length >= 10) {
+                        this.checkForFunctionCall(text, 'char');
+                    }
+                    
+                    // Check wake word
+                    const recentStart = Math.max(0, text.length - 50);
+                    const recentText = text.substring(recentStart);
+                    if (this.wakeWordDetector) {
+                        this.wakeWordDetector.detect(recentText);
+                    }
+                }
+            }
+
+            handleSpeechStart() {
+                this.vadIndicator.textContent = 'VAD: 说话中';
+                this.vadIndicator.classList.add('active');
+            }
+
+            handleSpeechEnd() {
+                this.vadIndicator.textContent = 'VAD: 静音';
+                this.vadIndicator.classList.remove('active');
+                
+                // Trigger intent detection on silence
+                if (this.isInMeetingAgentMode && this.currentTranscript.length > this.lastProcessedLength) {
+                    this.checkForFunctionCall(this.currentTranscript, 'silence');
+                }
+            }
+
+            async checkForFunctionCall(text, triggerType) {
+                if (this.intentDetector) {
+                    await this.intentDetector.detectIntent(text, triggerType);
+                }
+            }
+
+            async handleIntent(intent) {
+                // Display intent in UI
+                const intentElement = document.createElement('div');
+                intentElement.className = 'intent-item';
+                if (intent.isDuplicate) {
+                    intentElement.classList.add('duplicate');
+                }
+                
+                intentElement.innerHTML = `
+                    <strong>${intent.type}</strong>: ${intent.query}
+                    ${intent.isDuplicate ? '<br><small>[重复]</small>' : ''}
+                `;
+                
+                this.intentList.insertBefore(intentElement, this.intentList.firstChild);
+                
+                // Keep only recent intents
+                while (this.intentList.children.length > 5) {
+                    this.intentList.removeChild(this.intentList.lastChild);
+                }
+                
+                // Perform search if needed
+                if ((intent.type === 'search' || intent.type === 'memory') && !intent.isDuplicate) {
+                    const results = await this.performSearch(intent.query);
+                    this.displaySearchResults(results);
+                }
+            }
+
+            async performSearch(query) {
+                if (!this.searchManager) return [];
+                
+                // Try RAG first
+                const ragResults = await this.searchManager.searchRAG(query);
+                
+                // If no RAG results, use external search
+                if (!ragResults || ragResults.length === 0) {
+                    return await this.searchManager.searchExternal(query);
+                }
+                
+                return ragResults;
+            }
+
+            displaySearchResults(results) {
+                this.searchList.innerHTML = '';
+                
+                results.forEach(result => {
+                    const resultElement = document.createElement('div');
+                    resultElement.className = 'search-result-item';
+                    
+                    const sourceTag = result.source === 'RAG' ? 
+                        '<span class="source-tag rag">知识库</span>' : 
+                        '<span class="source-tag external">外部搜索</span>';
+                    
+                    resultElement.innerHTML = `
+                        <h4>${result.title}${sourceTag}</h4>
+                        <p>${result.snippet || result.content || ''}</p>
+                    `;
+                    
+                    this.searchList.appendChild(resultElement);
+                });
+            }
+
+            async handleWakeWord() {
+                // Show wake indicator
+                const wakeIndicator = document.createElement('div');
+                wakeIndicator.className = 'wake-indicator';
+                wakeIndicator.textContent = '小爱同学已唤醒';
+                document.body.appendChild(wakeIndicator);
+                
+                setTimeout(() => {
+                    wakeIndicator.remove();
+                }, 2000);
+                
+                // TTS response
+                if (this.tts && this.searchList.children.length > 0) {
+                    const summary = this.searchManager.summarizeResults(
+                        Array.from(this.searchList.children).map(el => ({
+                            title: el.querySelector('h4').textContent,
+                            content: el.querySelector('p').textContent
+                        }))
+                    );
+                    await this.tts.speak(summary);
+                } else if (this.tts) {
+                    await this.tts.speak('我在听，请问有什么可以帮助您？');
+                }
+            }
+
+            updateSummary(text) {
+                // Simple summary logic - can be enhanced with AI
+                const sentences = text.match(/[^。！？.!?]+[。！？.!?]/g) || [];
+                if (sentences.length > 0) {
+                    const summary = sentences.slice(-2).join(' ');
+                    this.summaryDialog.textContent = '摘要：' + (summary.length > 40 ? summary.substring(0, 40) + '...' : summary);
+                }
+            }
+
+            sendNote() {
+                const text = this.noteText.value.trim();
+                if (text) {
+                    this.createNote(text);
+                    this.resetNoteCreation();
+                }
+            }
+
+            createQuickNote() {
+                const text = this.currentTranscript.trim();
+                if (text) {
+                    this.createNote(text);
+                }
+                this.stopRecording();
+                this.resetFab();
+            }
+
+            createNote(text) {
+                const note = {
+                    id: Date.now(),
+                    text: text,
+                    timestamp: new Date().toISOString(),
+                    tags: this.extractTags(text),
+                    mentions: this.extractMentions(text),
+                    functions: this.extractFunctions(text)
+                };
+                
+                this.notes.unshift(note);
+                this.saveNotes();
+                this.renderNotes();
+            }
+
+            extractTags(text) {
+                return (text.match(/#[\u4e00-\u9fa5\w]+/g) || []).map(tag => tag.substring(1));
+            }
+
+            extractMentions(text) {
+                return (text.match(/@[\u4e00-\u9fa5\w]+/g) || []).map(mention => mention.substring(1));
+            }
+
+            extractFunctions(text) {
+                return (text.match(/![\u4e00-\u9fa5\w]+/g) || []).map(func => func.substring(1));
+            }
+
+            renderNotes() {
+                this.mainContent.innerHTML = '';
+                
+                this.notes.forEach(note => {
+                    const noteCard = this.createNoteCard(note);
+                    this.mainContent.appendChild(noteCard);
+                });
+            }
+
+            createNoteCard(note) {
+                const card = document.createElement('div');
+                card.className = 'note-card';
+                card.dataset.noteId = note.id;
+                
+                // Pills bar
+                if (note.tags.length > 0 || note.mentions.length > 0 || note.functions.length > 0) {
+                    const pillsBar = document.createElement('div');
+                    pillsBar.className = 'card-pills-bar';
+                    
+                    note.tags.forEach(tag => {
+                        const pill = document.createElement('span');
+                        pill.className = 'pill tag';
+                        pill.textContent = '#' + tag;
+                        pillsBar.appendChild(pill);
+                    });
+                    
+                    note.mentions.forEach(mention => {
+                        const pill = document.createElement('span');
+                        pill.className = 'pill mention';
+                        pill.textContent = '@' + mention;
+                        pillsBar.appendChild(pill);
+                    });
+                    
+                    note.functions.forEach(func => {
+                        const pill = document.createElement('span');
+                        pill.className = 'pill function';
+                        pill.textContent = '!' + func;
+                        pillsBar.appendChild(pill);
+                    });
+                    
+                    card.appendChild(pillsBar);
+                }
+                
+                // Text content
+                const textDiv = document.createElement('div');
+                textDiv.className = 'card-text';
+                textDiv.textContent = note.text;
+                card.appendChild(textDiv);
+                
+                // Click handlers
+                card.addEventListener('click', () => this.handleNoteClick(note.id));
+                card.addEventListener('dblclick', () => this.handleNoteDoubleClick(note.id));
+                
+                return card;
+            }
+
+            handleNoteClick(noteId) {
+                const index = this.selectedNotes.indexOf(noteId);
+                const card = document.querySelector(`[data-note-id="${noteId}"]`);
+                
+                if (index === -1) {
+                    this.selectedNotes.push(noteId);
+                    card.classList.add('selected');
+                } else {
+                    this.selectedNotes.splice(index, 1);
+                    card.classList.remove('selected');
+                }
+            }
+
+            handleNoteDoubleClick(noteId) {
+                // Edit note
+                const note = this.notes.find(n => n.id === noteId);
+                if (note) {
+                    this.editingNoteId = noteId;
+                    document.getElementById('edit-text').value = note.text;
+                    document.getElementById('edit-dialog').classList.add('visible');
+                }
+            }
+
+            resetNoteCreation() {
+                this.noteDialog.classList.remove('visible');
+                this.summaryDialog.classList.remove('visible');
+                this.noteText.value = '';
+                this.currentTranscript = '';
+                this.lastProcessedLength = 0;
+                
+                if (this.isInMeetingAgentMode) {
+                    this.exitMeetingAgentMode();
+                }
+                
+                this.resetFab();
+            }
+
+            resetFab() {
+                this.fab.className = 'active';
+                this.updateFabState('initial');
+                this.stopRecording();
+            }
+
+            updateFabState(state) {
+                // Hide all states
+                document.querySelectorAll('.fab-content').forEach(content => {
+                    content.classList.remove('active');
+                });
+                
+                // Show specific state
+                switch(state) {
+                    case 'initial':
+                        this.fabInitial.classList.add('active');
+                        break;
+                    case 'waveform':
+                        this.fabWaveform.classList.add('active');
+                        break;
+                    case 'pause':
+                        this.fabPause.classList.add('active');
+                        break;
+                    case 'buttons':
+                        this.fabButtons.classList.add('active');
+                        break;
+                    case 'manual-buttons':
+                        this.fabManualButtons.classList.add('active');
+                        break;
+                }
+            }
+
+            handleEscape() {
+                if (this.isInMeetingAgentMode) {
+                    this.exitMeetingAgentMode();
+                } else if (this.noteDialog.classList.contains('visible')) {
+                    this.resetNoteCreation();
+                } else if (document.getElementById('edit-dialog').classList.contains('visible')) {
+                    document.getElementById('edit-dialog').classList.remove('visible');
+                } else if (document.getElementById('batch-operation-view').classList.contains('visible')) {
+                    document.getElementById('batch-operation-view').classList.remove('visible');
+                } else if (document.getElementById('mcp-panel').classList.contains('visible')) {
+                    document.getElementById('mcp-panel').classList.remove('visible');
+                }
+            }
+
+            handleError(error) {
+                console.error('Error:', error);
+                this.showMessage('发生错误: ' + error.message);
+            }
+
+            showMessage(message) {
+                // Simple message display - can be enhanced
+                console.log(message);
+            }
+
+            saveNotes() {
+                localStorage.setItem('voiceNotes', JSON.stringify(this.notes));
+            }
+
+            loadNotes() {
+                const saved = localStorage.getItem('voiceNotes');
+                if (saved) {
+                    this.notes = JSON.parse(saved);
+                    this.renderNotes();
+                }
+            }
+
+            checkGeminiApiKey() {
+                const apiKey = localStorage.getItem('geminiApiKey');
+                if (!apiKey && this.isInMeetingAgentMode) {
+                    this.settingsPanel.classList.add('visible');
+                }
+            }
+
+            saveSettings() {
+                const apiKey = this.geminiApiKeyInput.value.trim();
+                if (apiKey) {
+                    localStorage.setItem('geminiApiKey', apiKey);
+                    
+                    // Update meeting tools with API key
+                    if (this.intentDetector) {
+                        this.intentDetector.setGeminiApiKey(apiKey);
+                    }
+                    if (this.searchManager) {
+                        this.searchManager.setGeminiApiKey(apiKey);
+                    }
+                    
+                    this.settingsPanel.classList.remove('visible');
+                }
+            }
+
+            closeSettings() {
+                this.settingsPanel.classList.remove('visible');
+            }
+        }
+
+        // Initialize app
+        window.addEventListener('DOMContentLoaded', () => {
+            new VoiceNoteApp();
+        });
+    </script>
+</body>
+</html>

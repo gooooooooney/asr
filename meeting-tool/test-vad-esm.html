@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TEN VAD ESM 测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .success { background-color: #d4edda; color: #155724; }
+        .error { background-color: #f8d7da; color: #721c24; }
+        .info { background-color: #d1ecf1; color: #0c5460; }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+        }
+        #results {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #f0f0f0;
+            border-radius: 5px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>TEN VAD ESM 模块测试</h1>
+    
+    <div id="status" class="status info">点击按钮开始测试...</div>
+    
+    <button id="testBtn">测试 TEN VAD (使用ES6模块)</button>
+    
+    <div id="results">
+        <h3>测试结果：</h3>
+        <div id="resultList"></div>
+    </div>
+
+    <script type="module">
+        import createVADModule from './public/ten_vad.js';
+        
+        const statusDiv = document.getElementById('status');
+        const resultList = document.getElementById('resultList');
+        
+        function updateStatus(message, type = 'info') {
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+            console.log(`[${type}] ${message}`);
+        }
+        
+        function addResult(message) {
+            const div = document.createElement('div');
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            resultList.appendChild(div);
+            resultList.scrollTop = resultList.scrollHeight;
+        }
+        
+        document.getElementById('testBtn').addEventListener('click', async () => {
+            try {
+                updateStatus('正在初始化 TEN VAD...', 'info');
+                
+                // 创建模块
+                const vadModule = await createVADModule({
+                    locateFile: (filename) => {
+                        if (filename === 'ten_vad.wasm') {
+                            return 'public/ten_vad.wasm';
+                        }
+                        return filename;
+                    }
+                });
+                
+                // 添加辅助函数
+                if (!vadModule.getValue) {
+                    vadModule.getValue = (ptr, type) => {
+                        switch (type) {
+                            case 'i32': return vadModule.HEAP32[ptr >> 2];
+                            case 'float': return vadModule.HEAPF32[ptr >> 2];
+                            default: throw new Error(`Unsupported type: ${type}`);
+                        }
+                    };
+                }
+                
+                addResult('VAD 模块加载成功');
+                
+                // 创建 VAD 实例
+                const vadHandlePtr = vadModule._malloc(4);
+                const result = vadModule._ten_vad_create(vadHandlePtr, 256, 0.5);
+                
+                if (result === 0) {
+                    const vadHandle = vadModule.getValue(vadHandlePtr, 'i32');
+                    addResult(`VAD 实例创建成功，句柄: ${vadHandle}`);
+                    
+                    // 测试处理
+                    const testAudio = new Int16Array(256);
+                    for (let i = 0; i < 256; i++) {
+                        testAudio[i] = Math.sin(2 * Math.PI * 440 * i / 16000) * 8000;
+                    }
+                    
+                    const audioPtr = vadModule._malloc(256 * 2);
+                    const probPtr = vadModule._malloc(4);
+                    const flagPtr = vadModule._malloc(4);
+                    
+                    vadModule.HEAP16.set(testAudio, audioPtr / 2);
+                    
+                    const processResult = vadModule._ten_vad_process(
+                        vadHandle, audioPtr, 256, probPtr, flagPtr
+                    );
+                    
+                    if (processResult === 0) {
+                        const probability = vadModule.getValue(probPtr, 'float');
+                        const voiceFlag = vadModule.getValue(flagPtr, 'i32');
+                        addResult(`处理成功! 概率: ${probability.toFixed(3)}, 语音标志: ${voiceFlag}`);
+                        updateStatus('测试完成！', 'success');
+                    } else {
+                        throw new Error(`处理失败: ${processResult}`);
+                    }
+                    
+                    // 清理
+                    vadModule._free(audioPtr);
+                    vadModule._free(probPtr);
+                    vadModule._free(flagPtr);
+                    vadModule._ten_vad_destroy(vadHandlePtr);
+                    vadModule._free(vadHandlePtr);
+                    
+                } else {
+                    throw new Error(`VAD 创建失败: ${result}`);
+                }
+                
+            } catch (error) {
+                updateStatus(`错误: ${error.message}`, 'error');
+                console.error(error);
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,2796 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>AI 语音笔记 V1.2</title>
+    <style>
+        :root {
+            --fab-height: 50px;
+            --fab-initial-width: 80px;
+            --fab-long-width: 50vw;
+            --fab-bottom-position: 15vh;
+            --dialog-bottom-margin: 15px;
+            --primary-bg: #ffffff;
+            --secondary-bg: #f5f5f5;
+            --primary-text: #000000;
+            --border-color: #e0e0e0;
+            --highlight-color: #007aff;
+            --tag-bg: #eef5ff;
+            --tag-text: #005fcc;
+            --mention-bg: #e6f6e6;
+            --mention-text: #006400;
+            --function-bg: #f3e8ff;
+            --function-text: #5d3d9c;
+            --duration: 0.3s;
+            --long-press-anim-duration: 2.1s;
+        }
+
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--secondary-bg);
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #app-container {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #top-bar-container {
+            position: sticky;
+            top: 0;
+            background-color: var(--secondary-bg);
+            padding: 10px 15px;
+            z-index: 998;
+            border-bottom: 1px solid var(--border-color);
+            flex-shrink: 0;
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        #user-avatar {
+            position: absolute;
+            left: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            z-index: 10;
+        }
+        
+        #user-avatar:hover {
+            transform: translateY(-50%) scale(1.05);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+        
+        #user-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        #search-bar {
+            width: 100%;
+            padding: 10px 15px;
+            padding-left: 60px; /* Leave space for avatar */
+            border-radius: 20px;
+            border: 1px solid var(--border-color);
+            font-size: 16px;
+            box-sizing: border-box;
+            background-color: var(--primary-bg);
+        }
+        #search-bar:focus {
+            outline: none;
+            border-color: var(--highlight-color);
+        }
+
+        #summary-dialog {
+            font-size: 14px;
+            color: #555;
+            min-height: 20px;
+            display: none;
+        }
+        #summary-dialog.visible {
+            display: block;
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90vw;
+            max-width: 600px;
+            background-color: var(--primary-bg);
+            border-radius: 12px;
+            padding: 12px 16px;
+            margin-top: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            z-index: 999;
+            box-sizing: border-box;
+        }
+
+        #main-content {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 15px;
+            padding-bottom: calc(var(--fab-bottom-position) + var(--fab-height) + 20px);
+            box-sizing: border-box;
+        }
+
+        .note-card {
+            background-color: var(--primary-bg);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            border: 2px solid transparent;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+            position: relative;
+            cursor: pointer;
+        }
+
+        .note-card.selected {
+            border-color: var(--highlight-color);
+            box-shadow: 0 4px 12px rgba(0, 122, 255, 0.2);
+        }
+
+        .card-pills-bar {
+            display: flex;
+            overflow-x: auto;
+            white-space: nowrap;
+            padding-bottom: 12px;
+            margin-bottom: 12px;
+            border-bottom: 1px solid var(--border-color);
+            gap: 8px;
+        }
+        .card-pills-bar::-webkit-scrollbar { display: none; }
+        .card-pills-bar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        .card-text {
+            color: var(--primary-text);
+            font-size: 15px;
+            line-height: 1.7;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .audio-player {
+            position: absolute;
+            top: 0;
+            left: 0;
+            transform: translate(-6px, -50%);
+            background-color: #f0f0f0;
+            color: var(--primary-text);
+            border: none;
+            border-radius: 6px;
+            padding: 4px 0;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            width: 8.33%;
+            min-width: 40px;
+            text-align: center;
+            transition: background-color 0.2s, transform 0.2s ease;
+            z-index: 1;
+        }
+        .audio-player:hover {
+            background-color: #e0e0e0;
+            transform: translate(-6px, -50%) scale(1.05);
+        }
+
+        /* FAB Styles */
+        #fab {
+            position: fixed;
+            left: 50%;
+            bottom: var(--fab-bottom-position);
+            transform: translateX(-50%);
+            height: var(--fab-height);
+            width: var(--fab-initial-width);
+            background-color: var(--primary-bg);
+            border-radius: calc(var(--fab-height) / 2);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+            transition: width var(--duration) ease, background-color var(--duration) ease;
+            overflow: hidden;
+            z-index: 999;
+        }
+        #fab.growing {
+            transition: width var(--long-press-anim-duration) linear;
+            width: var(--fab-long-width);
+        }
+        #fab.expanded {
+            width: var(--fab-long-width);
+        }
+
+        .fab-content {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+            color: var(--primary-text);
+            font-weight: 500;
+            font-size: 14px;
+        }
+        .fab-content.active {
+            display: flex;
+        }
+
+        .waveform span {
+            width: 3px;
+            height: 5px;
+            margin: 0 2px;
+            background-color: var(--primary-text);
+            border-radius: 2px;
+            animation: wave 1.2s infinite ease-in-out;
+            display: inline-block;
+        }
+        .waveform span:nth-child(1) { animation-delay: -1.2s; }
+        .waveform span:nth-child(2) { animation-delay: -1.0s; }
+        .waveform span:nth-child(3) { animation-delay: -0.8s; }
+        .waveform span:nth-child(4) { animation-delay: -0.6s; }
+        .waveform span:nth-child(5) { animation-delay: -0.4s; }
+        @keyframes wave {
+            0%, 40%, 100% { transform: scaleY(1.0); }
+            20% { transform: scaleY(3.0); }
+        }
+
+        /* Dialog Styles */
+        .dialog {
+            position: fixed;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: var(--primary-bg);
+            border-radius: 16px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+            padding: 20px;
+            box-sizing: border-box;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity var(--duration) ease, transform var(--duration) ease, visibility var(--duration) ease;
+            z-index: 1000;
+            width: 90vw;
+            max-width: 600px;
+        }
+        .dialog.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        #note-dialog, #edit-dialog {
+            bottom: calc(var(--fab-bottom-position) + var(--fab-height) + var(--dialog-bottom-margin));
+        }
+
+        .dialog-content {
+            position: relative;
+        }
+
+        .dialog-textarea, .editable-content {
+            width: 100%;
+            min-height: 120px;
+            max-height: 300px;
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 16px;
+            line-height: 1.5;
+            resize: none;
+            overflow-y: auto;
+            box-sizing: border-box;
+        }
+        .dialog-textarea:focus, .editable-content:focus {
+            outline: none;
+            border-color: var(--highlight-color);
+        }
+        
+        .editable-content[placeholder]:empty::before {
+            content: attr(placeholder);
+            color: #999;
+            pointer-events: none;
+        }
+        
+        /* Pill Styles */
+        .pill {
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-weight: 500;
+            font-size: 0.9em;
+            display: inline-block;
+            margin: 0 2px;
+            white-space: nowrap;
+            user-select: none;
+            flex-shrink: 0;
+        }
+        .pill.tag {
+            background-color: var(--tag-bg);
+            color: var(--tag-text);
+        }
+        .pill.mention {
+            background-color: var(--mention-bg);
+            color: var(--mention-text);
+        }
+        .pill.function {
+            background-color: var(--function-bg);
+            color: var(--function-text);
+        }
+
+        .dialog-actions {
+            position: absolute;
+            bottom: -10px;
+            right: 0;
+            display: flex;
+            gap: 10px;
+        }
+
+        .dialog-button {
+            padding: 8px 16px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background-color: var(--primary-bg);
+            color: var(--primary-text);
+            font-size: 14px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        .dialog-button:hover {
+            background-color: var(--secondary-bg);
+        }
+        .dialog-button.primary {
+            background-color: var(--highlight-color);
+            color: white;
+            border-color: var(--highlight-color);
+        }
+        .dialog-button.primary:hover {
+            background-color: #0051d5;
+        }
+
+        /* Pills */
+        .pill {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 16px;
+            font-size: 14px;
+            margin-right: 6px;
+            cursor: default;
+        }
+        .pill.tag {
+            background-color: var(--tag-bg);
+            color: var(--tag-text);
+        }
+        .pill.mention {
+            background-color: var(--mention-bg);
+            color: var(--mention-text);
+        }
+        .pill.function {
+            background-color: var(--function-bg);
+            color: var(--function-text);
+        }
+
+        /* Bulk Operations View */
+        .batch-operation-view {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            display: none;
+            z-index: 1100;
+        }
+        .batch-operation-view.visible {
+            display: flex;
+        }
+
+        .batch-left-section {
+            flex: 1;
+            padding: 40px;
+            overflow-y: auto;
+        }
+
+        .batch-right-section {
+            width: 300px;
+            background-color: var(--primary-bg);
+            padding: 40px 30px;
+            box-shadow: -4px 0 20px rgba(0,0,0,0.1);
+        }
+
+        .batch-card-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .batch-card-item {
+            background-color: var(--primary-bg);
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+
+        .batch-operations {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .batch-operation-button {
+            padding: 15px 20px;
+            border: none;
+            border-radius: 8px;
+            background-color: var(--primary-bg);
+            color: var(--primary-text);
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.2s ease, transform 0.2s ease;
+            text-align: left;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        .batch-operation-button:hover {
+            background-color: var(--secondary-bg);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+        }
+
+        /* MCP Panel */
+        #mcp-panel {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 60vh;
+            background-color: var(--primary-bg);
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.1);
+            transform: translateY(100%);
+            transition: transform var(--duration) ease;
+            z-index: 1050;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        #mcp-panel.visible {
+            transform: translateY(0);
+        }
+
+        .mcp-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 20px;
+            padding: 20px 0;
+        }
+
+        .mcp-app-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 150px;
+            background-color: var(--secondary-bg);
+            border-radius: 16px;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            padding: 20px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .mcp-app-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+        }
+        
+        .mcp-app-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+        
+        .mcp-app-name {
+            font-weight: 600;
+            font-size: 16px;
+            margin-bottom: 5px;
+            color: var(--primary-text);
+        }
+        
+        .mcp-app-desc {
+            font-size: 12px;
+            color: #666;
+            line-height: 1.4;
+        }
+        
+        .mcp-app-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: var(--highlight-color);
+            transform: scaleX(0);
+            transition: transform 0.3s ease;
+        }
+        
+        .mcp-app-card:hover::before {
+            transform: scaleX(1);
+        }
+
+        /* Suggestion Popup */
+        .suggestion-popup {
+            position: absolute;
+            background-color: var(--primary-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1010;
+            display: none;
+        }
+        .suggestion-popup.visible {
+            display: block;
+        }
+
+        .suggestion-item {
+            padding: 10px 15px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        .suggestion-item:hover,
+        .suggestion-item.highlighted {
+            background-color: var(--secondary-bg);
+        }
+
+        /* Meeting Agent Mode Styles */
+        .meeting-agent-ripple {
+            position: fixed;
+            inset: -20px;
+            border: 40px solid rgba(59, 130, 246, 0.15);
+            border-radius: 20px;
+            animation: ripple 4s ease-in-out infinite;
+            pointer-events: none;
+            z-index: 1;
+            display: none;
+        }
+
+        .meeting-agent-mode .meeting-agent-ripple {
+            display: block;
+        }
+
+        @keyframes ripple {
+            0% {
+                transform: scale(0.9);
+                opacity: 0.1;
+            }
+            50% {
+                transform: scale(1.05);
+                opacity: 0.2;
+            }
+            100% {
+                transform: scale(0.9);
+                opacity: 0.1;
+            }
+        }
+
+        /* Intent Panel */
+        .intent-panel {
+            position: fixed;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 280px;
+            max-height: 60vh;
+            background-color: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            padding: 20px;
+            overflow-y: auto;
+            display: none;
+            z-index: 950;
+        }
+
+        .meeting-agent-mode .intent-panel {
+            display: block;
+        }
+
+        .intent-item {
+            padding: 12px;
+            margin-bottom: 10px;
+            background-color: rgba(227, 242, 253, 0.8);
+            border-left: 4px solid #2196f3;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        /* Search Panel */
+        .search-panel {
+            position: fixed;
+            left: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 320px;
+            max-height: 60vh;
+            background-color: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            padding: 20px;
+            overflow-y: auto;
+            display: none;
+            z-index: 950;
+        }
+
+        .meeting-agent-mode .search-panel {
+            display: block;
+        }
+
+        /* VAD Indicator */
+        .vad-indicator {
+            position: fixed;
+            bottom: calc(var(--fab-bottom-position) + var(--fab-height) + 20px);
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 5px 10px;
+            border-radius: 20px;
+            background-color: #ecf0f1;
+            font-size: 12px;
+            transition: all 0.3s;
+            opacity: 0;
+            visibility: hidden;
+        }
+
+        .meeting-agent-mode .vad-indicator {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .vad-indicator.active {
+            background-color: #2ecc71;
+            color: white;
+        }
+
+        /* Toast */
+        #toast {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0,0,0,0.8);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 20px;
+            font-size: 14px;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+            z-index: 2000;
+        }
+        #toast.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        /* Suggestion Popup Styles */
+        #suggestion-popup {
+            position: absolute;
+            background-color: var(--primary-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            max-height: 150px;
+            overflow-y: auto;
+            z-index: 1001;
+            display: none;
+        }
+        .suggestion-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 14px;
+            color: var(--primary-text);
+            transition: background-color 0.1s ease, color 0.1s ease;
+        }
+        .suggestion-item:hover, .suggestion-item.highlighted {
+            background-color: var(--tag-bg);
+            color: var(--tag-text);
+        }
+
+        /* User Profile Panel */
+        .user-profile-panel {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.9);
+            background: var(--primary-bg);
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            z-index: 1001;
+            width: 480px;
+            max-width: 90vw;
+            max-height: 80vh;
+            display: none;
+            opacity: 0;
+            transition: all 0.3s ease;
+        }
+
+        .user-profile-panel.visible {
+            display: block;
+            animation: profilePanelShow 0.3s forwards;
+        }
+        
+        @keyframes profilePanelShow {
+            from {
+                opacity: 0;
+                transform: translate(-50%, -50%) scale(0.9);
+            }
+            to {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(1);
+            }
+        }
+
+        .profile-header {
+            padding: 30px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            position: relative;
+        }
+
+        .profile-avatar {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .profile-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .profile-info h2 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .profile-info p {
+            margin: 5px 0 0 0;
+            color: #666;
+            font-size: 14px;
+        }
+
+        .close-profile-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: transparent;
+            font-size: 24px;
+            cursor: pointer;
+            border-radius: 50%;
+            transition: all 0.2s;
+            color: #666;
+        }
+
+        .close-profile-btn:hover {
+            background: var(--secondary-bg);
+            color: var(--primary-text);
+        }
+
+        .profile-content {
+            padding: 30px;
+            overflow-y: auto;
+            max-height: calc(80vh - 140px);
+        }
+
+        .profile-section {
+            margin-bottom: 30px;
+        }
+
+        .profile-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .profile-section h3 {
+            margin: 0 0 20px 0;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .settings-group {
+            margin-bottom: 20px;
+        }
+
+        .settings-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .settings-group input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+            box-sizing: border-box;
+        }
+
+        .settings-group input:focus {
+            outline: none;
+            border-color: var(--highlight-color);
+        }
+
+        .settings-group small {
+            display: block;
+            margin-top: 5px;
+            color: #666;
+            font-size: 12px;
+        }
+
+        .save-btn {
+            background: var(--highlight-color);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .save-btn:hover {
+            background: #0056d3;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 20px;
+            background: var(--secondary-bg);
+            border-radius: 12px;
+        }
+
+        .stat-value {
+            display: block;
+            font-size: 32px;
+            font-weight: 600;
+            color: var(--highlight-color);
+        }
+
+        .stat-label {
+            display: block;
+            margin-top: 5px;
+            font-size: 14px;
+            color: #666;
+        }
+        
+        /* AI App Dialog */
+        .ai-app-dialog {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.9);
+            background: var(--primary-bg);
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            z-index: 1060;
+            width: 500px;
+            max-width: 90vw;
+            max-height: 80vh;
+            display: none;
+            opacity: 0;
+            transition: all 0.3s ease;
+            overflow: hidden;
+        }
+        
+        .ai-app-dialog.visible {
+            display: block;
+            animation: aiAppDialogShow 0.3s forwards;
+        }
+        
+        @keyframes aiAppDialogShow {
+            from {
+                opacity: 0;
+                transform: translate(-50%, -50%) scale(0.9);
+            }
+            to {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(1);
+            }
+        }
+        
+        .ai-app-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .ai-app-title {
+            font-size: 20px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .ai-app-content {
+            padding: 20px;
+            max-height: calc(80vh - 140px);
+            overflow-y: auto;
+        }
+        
+        .ai-app-input-group {
+            margin-bottom: 20px;
+        }
+        
+        .ai-app-input-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            font-size: 14px;
+        }
+        
+        .ai-app-input-group input,
+        .ai-app-input-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+            box-sizing: border-box;
+        }
+        
+        .ai-app-input-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+        
+        .ai-app-input-group input:focus,
+        .ai-app-input-group textarea:focus {
+            outline: none;
+            border-color: var(--highlight-color);
+        }
+        
+        .ai-app-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            padding-top: 20px;
+        }
+        
+        .ai-app-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .ai-app-btn.primary {
+            background: var(--highlight-color);
+            color: white;
+        }
+        
+        .ai-app-btn.primary:hover {
+            background: #0056d3;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
+        }
+        
+        .ai-app-btn.secondary {
+            background: var(--secondary-bg);
+            color: var(--primary-text);
+        }
+        
+        .ai-app-btn.secondary:hover {
+            background: #e0e0e0;
+        }
+        
+        .ai-app-result {
+            margin-top: 20px;
+            padding: 16px;
+            background: var(--secondary-bg);
+            border-radius: 8px;
+            display: none;
+        }
+        
+        .ai-app-result.visible {
+            display: block;
+        }
+        
+        .ai-app-result h4 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            font-weight: 600;
+        }
+        
+        .ai-app-result-content {
+            font-size: 14px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+        
+        .ai-app-loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+        }
+        
+        .ai-app-loading.visible {
+            display: block;
+        }
+        
+        .ai-app-loading-spinner {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border-color);
+            border-top-color: var(--highlight-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .ai-app-loading-text {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <!-- Main App Container -->
+    <div id="app-container">
+        <div id="top-bar-container">
+            <div id="user-avatar" title="个人设置">
+                <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='50' fill='%2307c160'/%3E%3Ctext x='50' y='55' text-anchor='middle' font-size='40' fill='white' font-family='Arial'%3EU%3C/text%3E%3C/svg%3E" alt="User Avatar">
+            </div>
+            <input type="text" id="search-bar" placeholder="搜索笔记或 #标签">
+            <div id="summary-dialog">
+                <div id="summary-content"></div>
+            </div>
+        </div>
+        <div id="main-content">
+            <!-- Note cards will be inserted here -->
+        </div>
+    </div>
+
+    <!-- FAB -->
+    <div id="fab">
+        <div class="fab-content active" id="fab-initial">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="23"/>
+                <line x1="8" y1="23" x2="16" y2="23"/>
+            </svg>
+        </div>
+        <div class="fab-content" id="fab-waveform">
+            <div class="waveform">
+                <span></span><span></span><span></span><span></span><span></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Note Dialog -->
+    <div id="note-dialog" class="dialog">
+        <div class="dialog-content">
+            <div id="note-text" class="editable-content" contenteditable="true" placeholder="开始说话或输入文字..."></div>
+            <div class="dialog-actions">
+                <button class="dialog-button" id="pause-record-btn">暂停</button>
+                <button class="dialog-button primary" id="send-note-btn">发送</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Dialog -->
+    <div id="edit-dialog" class="dialog">
+        <div class="dialog-content">
+            <div id="edit-text" class="editable-content" contenteditable="true" placeholder="编辑笔记内容..."></div>
+            <div class="dialog-actions">
+                <button class="dialog-button" id="cancel-edit-btn">取消</button>
+                <button class="dialog-button primary" id="save-edit-btn">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Batch Operation View -->
+    <div id="batch-operation-view" class="batch-operation-view">
+        <div class="batch-left-section">
+            <div class="batch-card-list" id="batch-card-list"></div>
+        </div>
+        <div class="batch-right-section">
+            <div class="batch-operations">
+                <button class="batch-operation-button">AI合并笔记</button>
+                <button class="batch-operation-button">转发到微信/小红书</button>
+                <button class="batch-operation-button">AI搜索</button>
+                <button class="batch-operation-button">创建新分类</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MCP Panel -->
+    <div id="mcp-panel">
+        <h3 style="margin-bottom: 20px;">AI 应用商店</h3>
+        <div class="mcp-grid" id="ai-apps-grid">
+            <!-- AI apps will be dynamically inserted here -->
+        </div>
+    </div>
+
+    <!-- Suggestion Popup -->
+    <div id="suggestion-popup" class="suggestion-popup"></div>
+
+    <!-- Meeting Agent Mode Elements -->
+    <div class="meeting-agent-ripple"></div>
+
+    <div class="intent-panel" id="intent-panel">
+        <h3 style="margin-bottom: 15px; font-size: 16px;">意图识别</h3>
+        <div id="intent-list"></div>
+    </div>
+
+    <div class="search-panel" id="search-panel">
+        <h3 style="margin-bottom: 15px; font-size: 16px;">搜索结果</h3>
+        <div id="search-list"></div>
+    </div>
+
+    <div class="vad-indicator" id="vad-indicator">VAD: 静音</div>
+
+    <!-- User Profile Panel -->
+    <div id="user-profile-panel" class="user-profile-panel">
+        <div class="profile-header">
+            <div class="profile-avatar">
+                <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='50' fill='%2307c160'/%3E%3Ctext x='50' y='55' text-anchor='middle' font-size='40' fill='white' font-family='Arial'%3EU%3C/text%3E%3C/svg%3E" alt="User Avatar">
+            </div>
+            <div class="profile-info">
+                <h2>用户</h2>
+                <p>user@example.com</p>
+            </div>
+            <button class="close-profile-btn" id="close-profile">×</button>
+        </div>
+        <div class="profile-content">
+            <div class="profile-section">
+                <h3>API 设置</h3>
+                <div class="settings-group">
+                    <label for="gemini-api-key">Gemini API Key</label>
+                    <input type="password" id="gemini-api-key" placeholder="输入你的 Gemini API key">
+                    <small>用于意图识别和智能搜索功能</small>
+                </div>
+                <button class="save-btn" id="save-settings">保存设置</button>
+            </div>
+            <div class="profile-section">
+                <h3>统计信息</h3>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <span class="stat-value" id="total-notes">0</span>
+                        <span class="stat-label">笔记总数</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value" id="total-tags">0</span>
+                        <span class="stat-label">标签数量</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast"></div>
+
+    <!-- Load meeting tool modules -->
+    <script src="meeting-tool/public/ten_vad_loader.js"></script>
+    <script type="module">
+        // Import meeting tool modules
+        import { SpeechRecognitionManager } from './meeting-tool/src/speechRecognition.js';
+        import { TenVADManager } from './meeting-tool/src/tenVad.js';
+        import { GeminiIntentDetector } from './meeting-tool/src/geminiIntentDetector.js';
+        import { SearchManager } from './meeting-tool/src/searchManager.js';
+        import { TTSManager } from './meeting-tool/src/tts.js';
+        import { WakeWordDetector } from './meeting-tool/src/wakeWord.js';
+        import { AIAppStore } from './meeting-tool/src/aiAppStore.js';
+
+        class VoiceNoteApp {
+            constructor() {
+                // States
+                this.longPressTimer = null;
+                this.longPressFullTimer = null;
+                this.clickCount = 0;
+                this.clickTimer = null;
+                this.isRecording = false;
+                this.isLongPressing = false;
+                this.currentMode = null; // null, 'manual', 'voice', 'summary', 'agent'
+                this.currentTranscript = '';
+                this.lastProcessedLength = 0;
+                
+                // Meeting tools
+                this.speechRecognition = null;
+                this.vad = null;
+                this.intentDetector = null;
+                this.searchManager = null;
+                this.tts = null;
+                this.wakeWordDetector = null;
+                
+                // AI App Store
+                this.aiAppStore = new AIAppStore();
+                
+                // Data
+                this.notes = [];
+                this.selectedNotes = new Set();
+                this.editingNoteId = null;
+                
+                // Intelligent Symbol System
+                this.suggestionVisible = false;
+                this.selectedSuggestionIndex = 0;
+                this.currentSymbolType = null;
+                this.currentSymbolStart = -1;
+                
+                // Mock data
+                this.mockTags = ["项目", "灵感", "待办", "会议纪要", "重要", "紧急", "想法", "计划"];
+                this.mockMentions = ["张三", "李四", "项目经理小王", "设计师伙伴", "产品经理", "开发团队"];
+                this.mockFunctions = ["总结全文", "创建待办事项", "发送邮件给", "翻译成英文", "提醒我", "分享到微信"];
+                this.createdTags = new Set(["项目", "灵感", "待办", "会议纪要"]);
+                
+                // Initialize
+                this.initElements();
+                this.setupEventListeners();
+                this.loadNotes();
+                this.loadSettings();
+                
+                // Show initial tip for AI app store
+                setTimeout(() => {
+                    this.showToast('提示：上滑FAB或右键FAB或按Ctrl+A打开AI应用商店');
+                }, 2000);
+            }
+
+            initElements() {
+                // FAB
+                this.fab = document.getElementById('fab');
+                this.fabInitial = document.getElementById('fab-initial');
+                this.fabWaveform = document.getElementById('fab-waveform');
+                
+                // Dialogs
+                this.noteDialog = document.getElementById('note-dialog');
+                this.summaryDialog = document.getElementById('summary-dialog');
+                this.editDialog = document.getElementById('edit-dialog');
+                this.userProfilePanel = document.getElementById('user-profile-panel');
+                this.userAvatar = document.getElementById('user-avatar');
+                
+                // Text areas
+                this.noteText = document.getElementById('note-text');
+                this.editText = document.getElementById('edit-text');
+                this.summaryContent = document.getElementById('summary-content');
+                
+                // Buttons
+                this.pauseRecordBtn = document.getElementById('pause-record-btn');
+                this.sendNoteBtn = document.getElementById('send-note-btn');
+                this.cancelEditBtn = document.getElementById('cancel-edit-btn');
+                this.saveEditBtn = document.getElementById('save-edit-btn');
+                
+                // Main content
+                this.mainContent = document.getElementById('main-content');
+                this.searchBar = document.getElementById('search-bar');
+                
+                // Other views
+                this.batchView = document.getElementById('batch-operation-view');
+                this.mcpPanel = document.getElementById('mcp-panel');
+                this.toast = document.getElementById('toast');
+                this.suggestionPopup = document.getElementById('suggestion-popup');
+                
+                // Meeting Agent elements
+                this.intentPanel = document.getElementById('intent-panel');
+                this.searchPanel = document.getElementById('search-panel');
+                this.vadIndicator = document.getElementById('vad-indicator');
+            }
+
+            setupEventListeners() {
+                // FAB touch state
+                this.fabTouchState = {
+                    startY: 0,
+                    startTime: 0,
+                    isSwipe: false
+                };
+                
+                // FAB events
+                this.fab.addEventListener('mousedown', (e) => this.handleFabMouseDown(e));
+                this.fab.addEventListener('mouseup', (e) => this.handleFabMouseUp(e));
+                this.fab.addEventListener('mouseleave', (e) => this.handleFabMouseLeave(e));
+                
+                // Touch events for mobile
+                this.fab.addEventListener('touchstart', (e) => {
+                    this.fabTouchState.startY = e.touches[0].clientY;
+                    this.fabTouchState.startTime = Date.now();
+                    this.fabTouchState.isSwipe = false;
+                    
+                    // Also handle as mouse down for long press
+                    this.handleFabMouseDown(e);
+                }, { passive: false });
+                
+                this.fab.addEventListener('touchmove', (e) => {
+                    const currentY = e.touches[0].clientY;
+                    const deltaY = this.fabTouchState.startY - currentY;
+                    
+                    // If moved up more than 30px, consider it a swipe
+                    if (deltaY > 30) {
+                        this.fabTouchState.isSwipe = true;
+                        e.preventDefault();
+                        
+                        // Cancel long press if it's a swipe
+                        if (this.longPressTimer) {
+                            clearTimeout(this.longPressTimer);
+                        }
+                        if (this.longPressFullTimer) {
+                            clearTimeout(this.longPressFullTimer);
+                        }
+                        this.isLongPressing = false;
+                    }
+                }, { passive: false });
+                
+                this.fab.addEventListener('touchend', (e) => {
+                    const touchEndY = e.changedTouches[0].clientY;
+                    const deltaY = this.fabTouchState.startY - touchEndY;
+                    const duration = Date.now() - this.fabTouchState.startTime;
+                    
+                    // Check if it's a swipe up gesture
+                    if (this.fabTouchState.isSwipe && deltaY > 50) {
+                        e.preventDefault();
+                        this.showMcpPanel();
+                        this.resetAll();
+                        return;
+                    }
+                    
+                    // Otherwise handle as normal touch
+                    this.handleFabMouseUp(e);
+                }, { passive: false });
+                
+                // Button events
+                this.pauseRecordBtn.addEventListener('click', () => this.pauseRecording());
+                this.sendNoteBtn.addEventListener('click', () => this.sendNote());
+                this.cancelEditBtn.addEventListener('click', () => this.cancelEdit());
+                this.saveEditBtn.addEventListener('click', () => this.saveEdit());
+                
+                // Text area events
+                this.noteText.addEventListener('click', () => {
+                    if (this.isRecording) {
+                        this.pauseRecording();
+                    }
+                });
+                
+                // Intelligent Symbol System
+                this.noteText.addEventListener('input', (e) => this.handleEditorInput(e));
+                this.noteText.addEventListener('keydown', (e) => this.handleEditorKeyDown(e));
+                this.editText.addEventListener('input', (e) => this.handleEditorInput(e));
+                this.editText.addEventListener('keydown', (e) => this.handleEditorKeyDown(e));
+                
+                // Search
+                this.searchBar.addEventListener('input', () => this.handleSearch());
+                
+                // User Profile
+                this.userAvatar.addEventListener('click', () => this.showUserProfile());
+                document.getElementById('save-settings').addEventListener('click', () => this.saveSettings());
+                document.getElementById('close-profile').addEventListener('click', () => this.closeUserProfile());
+                
+                // Global keyboard shortcuts
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape') {
+                        this.handleEscape();
+                    } else if (e.key === 'a' && e.ctrlKey) {
+                        // Ctrl+A opens AI App Store
+                        e.preventDefault();
+                        this.showMcpPanel();
+                    }
+                });
+                
+                // Right click on FAB to show AI apps
+                this.fab.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    this.showMcpPanel();
+                });
+                
+                // MCP panel close
+                this.mcpPanel.addEventListener('click', (e) => {
+                    if (e.target === this.mcpPanel) {
+                        this.hideMcpPanel();
+                    }
+                });
+                
+                // Add swipe down to close MCP panel
+                let panelTouchStartY = 0;
+                this.mcpPanel.addEventListener('touchstart', (e) => {
+                    panelTouchStartY = e.touches[0].clientY;
+                });
+                this.mcpPanel.addEventListener('touchend', (e) => {
+                    const touchEndY = e.changedTouches[0].clientY;
+                    if (touchEndY - panelTouchStartY > 100) {
+                        this.hideMcpPanel();
+                    }
+                });
+                
+                // Batch operations
+                this.batchView.addEventListener('click', (e) => {
+                    if (e.target.classList.contains('batch-operation-button')) {
+                        const operation = e.target.textContent;
+                        if (operation === 'AI合并笔记') {
+                            this.hideBatchView();
+                            this.hideMcpPanel();
+                            const app = this.aiAppStore.getApps().find(a => a.id === 'note-merger');
+                            this.openAIApp(app);
+                        } else {
+                            this.showToast(`执行了: ${operation}`);
+                            this.hideBatchView();
+                        }
+                    } else if (e.target === this.batchView) {
+                        this.hideBatchView();
+                    }
+                });
+            }
+
+            // FAB Interaction Handlers
+            handleFabMouseDown(e) {
+                e.preventDefault();
+                
+                // Start long press detection
+                this.isLongPressing = true;
+                const startTime = Date.now();
+                
+                // Start recording after 250ms
+                this.longPressTimer = setTimeout(() => {
+                    if (this.isLongPressing) {
+                        this.isRecording = true;
+                        this.fab.classList.add('growing');
+                        this.setFabState('waveform');
+                        this.startRecording();
+                        
+                        // Auto show dialog after 2.1s
+                        this.longPressFullTimer = setTimeout(() => {
+                            if (this.isRecording) {
+                                this.currentMode = 'voice';
+                                this.showNoteDialog();
+                                this.updateDialogButtons();
+                            }
+                        }, 1850); // 250ms + 1850ms = 2.1s total
+                    }
+                }, 250);
+            }
+
+            handleFabMouseUp(e) {
+                e.preventDefault();
+                const duration = this.isLongPressing ? Date.now() - (this.longPressStartTime || Date.now()) : 0;
+                
+                // Clear timers
+                if (this.longPressTimer) clearTimeout(this.longPressTimer);
+                if (this.longPressFullTimer) clearTimeout(this.longPressFullTimer);
+                
+                if (this.isRecording) {
+                    // Handle long press release
+                    this.fab.classList.remove('growing');
+                    
+                    // If dialog is already shown, just stop recording without closing
+                    if (this.noteDialog.classList.contains('visible')) {
+                        this.isRecording = false;
+                        this.speechRecognition.stop();
+                        this.updateDialogButtons();
+                        this.isLongPressing = false;
+                        return;
+                    }
+                    
+                    // If dialog not shown, check duration
+                    if (duration < 800) {
+                        // Too short
+                        this.showToast('录音时间过短');
+                        this.resetAll();
+                    } else if (duration < 2500) {
+                        // Quick note
+                        this.createQuickNote();
+                    }
+                } else if (!this.isLongPressing || duration < 250) {
+                    // Short press - count clicks
+                    this.clickCount++;
+                    if (this.clickTimer) clearTimeout(this.clickTimer);
+                    
+                    this.clickTimer = setTimeout(() => {
+                        if (this.clickCount === 1) {
+                            // Single click - manual note
+                            this.handleShortPress();
+                        } else if (this.clickCount === 2) {
+                            // Double click - meeting agent mode
+                            this.toggleMeetingAgentMode();
+                        } else if (this.clickCount >= 3) {
+                            // Triple click - summary mode
+                            this.handleTripleClick();
+                        }
+                        this.clickCount = 0;
+                    }, 300);
+                }
+                
+                this.isLongPressing = false;
+            }
+
+            handleFabMouseLeave(e) {
+                if (this.isLongPressing && !this.isRecording) {
+                    this.handleFabMouseUp(e);
+                }
+            }
+
+            // Mode Handlers
+            handleShortPress() {
+                this.currentMode = 'manual';
+                this.showNoteDialog();
+                this.fab.classList.add('expanded');
+                this.updateDialogButtons();
+                this.noteText.focus();
+            }
+
+            handleTripleClick() {
+                this.currentMode = 'summary';
+                this.showNoteDialog();
+                this.showSummaryDialog();
+                this.fab.classList.add('expanded');
+                
+                // Initialize ASR only
+                this.initializeMeetingTools(false);
+                this.startRecording();
+                this.startSummaryGeneration();
+                this.updateDialogButtons();
+            }
+
+            toggleMeetingAgentMode() {
+                if (document.body.classList.contains('meeting-agent-mode')) {
+                    this.exitMeetingAgentMode();
+                } else {
+                    this.enterMeetingAgentMode();
+                }
+            }
+
+            enterMeetingAgentMode() {
+                console.log('Entering meeting agent mode');
+                this.currentMode = 'agent';
+                document.body.classList.add('meeting-agent-mode');
+                this.showNoteDialog();
+                this.showSummaryDialog();
+                this.fab.classList.add('expanded');
+                
+                // Reset lastProcessedLength for new session
+                this.lastProcessedLength = 0;
+                this.currentTranscript = '';
+                
+                // Initialize all meeting tools
+                this.initializeMeetingTools(true);
+                this.startRecording();
+                this.startSummaryGeneration();
+                this.updateDialogButtons();
+                
+                // Check if API key is set
+                const apiKey = localStorage.getItem('geminiApiKey');
+                if (!apiKey) {
+                    console.warn('Gemini API key not set. Intent detection will not work.');
+                    this.showToast('请先设置 Gemini API Key');
+                }
+            }
+
+            exitMeetingAgentMode() {
+                document.body.classList.remove('meeting-agent-mode');
+                this.resetAll();
+            }
+
+            // Meeting Tools
+            initializeMeetingTools(fullFeatures = false) {
+                // Always initialize ASR
+                if (!this.speechRecognition) {
+                    this.speechRecognition = new SpeechRecognitionManager();
+                    this.speechRecognition.on('transcript', (text) => this.handleTranscript(text));
+                    this.speechRecognition.on('error', (error) => this.handleError(error));
+                }
+                
+                if (fullFeatures) {
+                    // Initialize all features for agent mode
+                    if (!this.vad) {
+                        this.vad = new TenVADManager();
+                        this.vad.on('speechStart', () => this.handleSpeechStart());
+                        this.vad.on('speechEnd', () => this.handleSpeechEnd());
+                    }
+                    
+                    if (!this.intentDetector) {
+                        this.intentDetector = new GeminiIntentDetector();
+                        const apiKey = localStorage.getItem('geminiApiKey');
+                        if (apiKey) {
+                            this.intentDetector.setGeminiApiKey(apiKey);
+                        }
+                        this.intentDetector.on('intent', (intent) => this.handleIntent(intent));
+                    }
+                    
+                    if (!this.searchManager) {
+                        this.searchManager = new SearchManager();
+                        const apiKey = localStorage.getItem('geminiApiKey');
+                        if (apiKey) {
+                            this.searchManager.setGeminiApiKey(apiKey);
+                        }
+                    }
+                    
+                    if (!this.tts) {
+                        this.tts = new TTSManager();
+                    }
+                    
+                    if (!this.wakeWordDetector) {
+                        this.wakeWordDetector = new WakeWordDetector();
+                        this.wakeWordDetector.on('wakeWordDetected', () => this.handleWakeWord());
+                    }
+                }
+            }
+
+            async startRecording() {
+                try {
+                    this.isRecording = true;
+                    
+                    if (this.speechRecognition) {
+                        await this.speechRecognition.start();
+                    }
+                    
+                    if (this.currentMode === 'agent' && this.vad) {
+                        await this.vad.start();
+                    }
+                } catch (error) {
+                    console.error('Failed to start recording:', error);
+                    this.showToast('启动录音失败');
+                }
+            }
+
+            stopRecording() {
+                this.isRecording = false;
+                
+                if (this.speechRecognition) {
+                    this.speechRecognition.stop();
+                }
+                
+                if (this.vad) {
+                    this.vad.stop();
+                }
+            }
+
+            pauseRecording() {
+                this.stopRecording();
+                this.pauseRecordBtn.textContent = '继续录音';
+                this.pauseRecordBtn.onclick = () => this.resumeRecording();
+            }
+
+            resumeRecording() {
+                this.startRecording();
+                this.pauseRecordBtn.textContent = '暂停';
+                this.pauseRecordBtn.onclick = () => this.pauseRecording();
+            }
+
+            // Event Handlers
+            handleTranscript(text) {
+                this.currentTranscript = text;
+                this.noteText.textContent = text;
+                
+                // Check for intents in agent mode
+                if (this.currentMode === 'agent') {
+                    const newText = text.substring(this.lastProcessedLength);
+                    console.log(`Agent mode - New text length: ${newText.length}, Total: ${text.length}, Last processed: ${this.lastProcessedLength}`);
+                    
+                    if (newText.length >= 10) {
+                        console.log('Checking for intent via char trigger');
+                        this.checkForIntent(text, 'char');
+                    }
+                    
+                    // Check wake word
+                    const recentText = text.substring(Math.max(0, text.length - 50));
+                    if (this.wakeWordDetector) {
+                        this.wakeWordDetector.detect(recentText);
+                    }
+                }
+            }
+
+            handleSpeechStart() {
+                this.vadIndicator.textContent = 'VAD: 说话中';
+                this.vadIndicator.classList.add('active');
+            }
+
+            handleSpeechEnd() {
+                this.vadIndicator.textContent = 'VAD: 静音';
+                this.vadIndicator.classList.remove('active');
+                
+                if (this.currentMode === 'agent' && this.currentTranscript.length > this.lastProcessedLength) {
+                    this.checkForIntent(this.currentTranscript, 'silence');
+                }
+            }
+
+            async checkForIntent(text, triggerType) {
+                if (this.intentDetector) {
+                    try {
+                        console.log(`Calling detectIntent with trigger: ${triggerType}`);
+                        const result = await this.intentDetector.detectIntent(text, triggerType);
+                        console.log('Intent detection result:', result);
+                        
+                        if (result) {
+                            // Update our lastProcessedLength to match the detector's state
+                            this.lastProcessedLength = text.length;
+                            // Handle the detected intent
+                            await this.handleIntent(result);
+                        }
+                    } catch (error) {
+                        console.error('Intent detection error:', error);
+                    }
+                }
+            }
+
+            async handleIntent(intent) {
+                console.log('Handling intent:', intent);
+                
+                // Display intent
+                const intentItem = document.createElement('div');
+                intentItem.className = 'intent-item';
+                intentItem.innerHTML = `<strong>${intent.type}</strong>: ${intent.query}`;
+                const intentList = document.getElementById('intent-list');
+                if (intentList) {
+                    intentList.appendChild(intentItem);
+                } else {
+                    console.error('Intent list element not found');
+                }
+                
+                // Perform search
+                if (intent.type === 'search' || intent.type === 'memory') {
+                    const results = await this.performSearch(intent.query);
+                    this.displaySearchResults(results);
+                }
+            }
+
+            async performSearch(query) {
+                if (!this.searchManager) return [];
+                
+                const ragResults = await this.searchManager.searchRAG(query);
+                if (!ragResults || ragResults.length === 0) {
+                    return await this.searchManager.searchExternal(query);
+                }
+                return ragResults;
+            }
+
+            displaySearchResults(results) {
+                const searchList = document.getElementById('search-list');
+                searchList.innerHTML = '';
+                
+                results.forEach(result => {
+                    const item = document.createElement('div');
+                    item.className = 'search-result-item';
+                    item.innerHTML = `<h4>${result.title}</h4><p>${result.content || result.snippet}</p>`;
+                    searchList.appendChild(item);
+                });
+            }
+
+            async handleWakeWord() {
+                this.showToast('小爱同学已唤醒');
+                
+                if (this.tts && this.searchPanel.children.length > 0) {
+                    const summary = '找到了相关信息';
+                    await this.tts.speak(summary);
+                }
+            }
+
+            handleError(error) {
+                console.error('Error:', error);
+                this.showToast('发生错误: ' + error.message);
+            }
+
+            // Summary Generation
+            startSummaryGeneration() {
+                // Simple summary generation
+                setInterval(() => {
+                    if (this.currentTranscript) {
+                        const words = this.currentTranscript.split(' ').slice(-10);
+                        this.summaryContent.textContent = '摘要: ' + words.join(' ') + '...';
+                    }
+                }, 2000);
+            }
+
+            // UI Updates
+            updateDialogButtons() {
+                if (this.currentMode === 'manual') {
+                    this.pauseRecordBtn.textContent = '录音';
+                    this.pauseRecordBtn.onclick = () => {
+                        this.currentMode = 'voice';
+                        this.startRecording();
+                        this.updateDialogButtons();
+                    };
+                } else {
+                    this.pauseRecordBtn.textContent = '暂停';
+                    this.pauseRecordBtn.onclick = () => this.pauseRecording();
+                }
+            }
+
+            setFabState(state) {
+                document.querySelectorAll('.fab-content').forEach(el => {
+                    el.classList.remove('active');
+                });
+                
+                if (state === 'initial') {
+                    this.fabInitial.classList.add('active');
+                } else if (state === 'waveform') {
+                    this.fabWaveform.classList.add('active');
+                }
+            }
+
+            // Dialog Management
+            showNoteDialog() {
+                this.noteDialog.classList.add('visible');
+            }
+
+            hideNoteDialog() {
+                this.noteDialog.classList.remove('visible');
+            }
+
+            showSummaryDialog() {
+                this.summaryDialog.classList.add('visible');
+            }
+
+            hideSummaryDialog() {
+                this.summaryDialog.classList.remove('visible');
+            }
+
+            showMcpPanel() {
+                // Render AI apps
+                this.renderAIApps();
+                this.mcpPanel.classList.add('visible');
+                this.fab.style.display = 'none';
+            }
+            
+            renderAIApps() {
+                const appsGrid = document.getElementById('ai-apps-grid');
+                appsGrid.innerHTML = '';
+                
+                const apps = this.aiAppStore.getApps();
+                apps.forEach(app => {
+                    const card = document.createElement('div');
+                    card.className = 'mcp-app-card';
+                    card.style.borderTopColor = app.color;
+                    card.innerHTML = `
+                        <div class="mcp-app-icon">${app.icon}</div>
+                        <div class="mcp-app-name">${app.name}</div>
+                        <div class="mcp-app-desc">${app.description}</div>
+                    `;
+                    card.onclick = () => this.openAIApp(app);
+                    appsGrid.appendChild(card);
+                });
+            }
+            
+            openAIApp(app) {
+                this.currentApp = app;
+                
+                // Create or get dialog
+                let dialog = document.getElementById('ai-app-dialog');
+                if (!dialog) {
+                    dialog = this.createAIAppDialog();
+                    document.body.appendChild(dialog);
+                }
+                
+                // Update dialog content based on app
+                this.updateAIAppDialog(dialog, app);
+                
+                // Show dialog
+                dialog.classList.add('visible');
+            }
+            
+            createAIAppDialog() {
+                const dialog = document.createElement('div');
+                dialog.id = 'ai-app-dialog';
+                dialog.className = 'ai-app-dialog';
+                dialog.innerHTML = `
+                    <div class="ai-app-header">
+                        <div class="ai-app-title">
+                            <span id="ai-app-icon"></span>
+                            <span id="ai-app-name"></span>
+                        </div>
+                        <button class="close-profile-btn" onclick="window.voiceNoteApp.closeAIApp()">×</button>
+                    </div>
+                    <div class="ai-app-content">
+                        <div id="ai-app-form"></div>
+                        <div id="ai-app-loading" class="ai-app-loading">
+                            <div class="ai-app-loading-spinner"></div>
+                            <div class="ai-app-loading-text">处理中...</div>
+                        </div>
+                        <div id="ai-app-result" class="ai-app-result">
+                            <h4>结果</h4>
+                            <div class="ai-app-result-content"></div>
+                        </div>
+                    </div>
+                `;
+                return dialog;
+            }
+            
+            updateAIAppDialog(dialog, app) {
+                dialog.querySelector('#ai-app-icon').textContent = app.icon;
+                dialog.querySelector('#ai-app-name').textContent = app.name;
+                
+                const form = dialog.querySelector('#ai-app-form');
+                form.innerHTML = '';
+                
+                switch (app.id) {
+                    case 'link-summarizer':
+                        form.innerHTML = `
+                            <div class="ai-app-input-group">
+                                <label>输入网页链接</label>
+                                <input type="url" id="link-url" placeholder="https://example.com" />
+                            </div>
+                            <div class="ai-app-actions">
+                                <button class="ai-app-btn secondary" onclick="window.voiceNoteApp.closeAIApp()">取消</button>
+                                <button class="ai-app-btn primary" onclick="window.voiceNoteApp.executeLinkSummarizer()">总结链接</button>
+                            </div>
+                        `;
+                        break;
+                        
+                    case 'todo-generator':
+                        if (this.selectedNotes.size === 0) {
+                            form.innerHTML = `
+                                <p style="text-align: center; color: #666; padding: 40px 0;">请先选择一条笔记</p>
+                                <div class="ai-app-actions">
+                                    <button class="ai-app-btn secondary" onclick="window.voiceNoteApp.closeAIApp()">关闭</button>
+                                </div>
+                            `;
+                        } else {
+                            const selectedNote = this.notes.find(n => this.selectedNotes.has(n.id));
+                            form.innerHTML = `
+                                <div class="ai-app-input-group">
+                                    <label>选中的笔记</label>
+                                    <textarea readonly>${selectedNote.text}</textarea>
+                                </div>
+                                <div class="ai-app-actions">
+                                    <button class="ai-app-btn secondary" onclick="window.voiceNoteApp.closeAIApp()">取消</button>
+                                    <button class="ai-app-btn primary" onclick="window.voiceNoteApp.executeTodoGenerator()">生成待办</button>
+                                </div>
+                            `;
+                        }
+                        break;
+                        
+                    case 'note-merger':
+                        if (this.selectedNotes.size < 2) {
+                            form.innerHTML = `
+                                <p style="text-align: center; color: #666; padding: 40px 0;">请至少选择两条笔记进行合并</p>
+                                <div class="ai-app-actions">
+                                    <button class="ai-app-btn secondary" onclick="window.voiceNoteApp.closeAIApp()">关闭</button>
+                                </div>
+                            `;
+                        } else {
+                            const selectedNotesArray = Array.from(this.selectedNotes).map(id => 
+                                this.notes.find(n => n.id === id)
+                            );
+                            form.innerHTML = `
+                                <div class="ai-app-input-group">
+                                    <label>将合并 ${selectedNotesArray.length} 条笔记</label>
+                                    <div style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px;">
+                                        ${selectedNotesArray.map((note, i) => `
+                                            <div style="margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--border-color);">
+                                                <strong>笔记 ${i + 1}:</strong><br>
+                                                ${note.text.substring(0, 100)}${note.text.length > 100 ? '...' : ''}
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                                <div class="ai-app-actions">
+                                    <button class="ai-app-btn secondary" onclick="window.voiceNoteApp.closeAIApp()">取消</button>
+                                    <button class="ai-app-btn primary" onclick="window.voiceNoteApp.executeNoteMerger()">合并笔记</button>
+                                </div>
+                            `;
+                        }
+                        break;
+                }
+                
+                // Reset result area
+                dialog.querySelector('#ai-app-result').classList.remove('visible');
+                dialog.querySelector('#ai-app-loading').classList.remove('visible');
+            }
+            
+            closeAIApp() {
+                const dialog = document.getElementById('ai-app-dialog');
+                if (dialog) {
+                    dialog.classList.remove('visible');
+                }
+            }
+            
+            async executeLinkSummarizer() {
+                const url = document.getElementById('link-url').value.trim();
+                if (!url) {
+                    this.showToast('请输入有效的网址');
+                    return;
+                }
+                
+                const dialog = document.getElementById('ai-app-dialog');
+                const loading = dialog.querySelector('#ai-app-loading');
+                const result = dialog.querySelector('#ai-app-result');
+                const resultContent = dialog.querySelector('.ai-app-result-content');
+                
+                loading.classList.add('visible');
+                result.classList.remove('visible');
+                
+                try {
+                    const response = await this.aiAppStore.executeApp('link-summarizer', { url });
+                    
+                    loading.classList.remove('visible');
+                    result.classList.add('visible');
+                    
+                    if (response.success) {
+                        resultContent.innerHTML = `
+                            <strong>${response.title}</strong><br><br>
+                            ${response.summary}
+                        `;
+                        
+                        // 创建新笔记
+                        const note = {
+                            id: Date.now(),
+                            text: `# ${response.title}\n\n${response.summary}\n\n来源: ${url}`,
+                            pills: [{type: '#', text: '链接总结'}],
+                            timestamp: new Date().toISOString(),
+                            hasAudio: false
+                        };
+                        
+                        this.notes.unshift(note);
+                        this.saveNotes();
+                        this.renderNotes();
+                        this.showToast('链接总结已保存为笔记');
+                    } else {
+                        resultContent.textContent = '总结失败，请稍后重试';
+                    }
+                } catch (error) {
+                    loading.classList.remove('visible');
+                    result.classList.add('visible');
+                    resultContent.textContent = '错误: ' + error.message;
+                }
+            }
+            
+            async executeTodoGenerator() {
+                const selectedNote = this.notes.find(n => this.selectedNotes.has(n.id));
+                if (!selectedNote) return;
+                
+                const dialog = document.getElementById('ai-app-dialog');
+                const loading = dialog.querySelector('#ai-app-loading');
+                const result = dialog.querySelector('#ai-app-result');
+                const resultContent = dialog.querySelector('.ai-app-result-content');
+                
+                loading.classList.add('visible');
+                result.classList.remove('visible');
+                
+                try {
+                    const response = await this.aiAppStore.executeApp('todo-generator', {
+                        noteText: selectedNote.text,
+                        noteId: selectedNote.id
+                    });
+                    
+                    loading.classList.remove('visible');
+                    result.classList.add('visible');
+                    
+                    if (response.success && response.todos.length > 0) {
+                        const todosList = response.todos.map(todo => 
+                            `- [${todo.priority === 'high' ? '❗' : todo.priority === 'low' ? '🔵' : '⚪'}] ${todo.text}`
+                        ).join('\n');
+                        
+                        resultContent.innerHTML = `
+                            <strong>生成的待办事项：</strong><br><br>
+                            <pre style="white-space: pre-wrap;">${todosList}</pre>
+                        `;
+                        
+                        // 创建待办笔记
+                        const todoNote = {
+                            id: Date.now(),
+                            text: `# 待办事项\n\n${todosList}\n\n来源笔记: #${selectedNote.id}`,
+                            pills: [{type: '#', text: '待办'}, {type: '!', text: '待办生成器'}],
+                            timestamp: new Date().toISOString(),
+                            hasAudio: false
+                        };
+                        
+                        this.notes.unshift(todoNote);
+                        this.saveNotes();
+                        this.renderNotes();
+                        this.showToast('待办事项已创建');
+                    } else {
+                        resultContent.textContent = '未能提取到待办事项';
+                    }
+                } catch (error) {
+                    loading.classList.remove('visible');
+                    result.classList.add('visible');
+                    resultContent.textContent = '错误: ' + error.message;
+                }
+            }
+            
+            async executeNoteMerger() {
+                const selectedNotesArray = Array.from(this.selectedNotes).map(id => 
+                    this.notes.find(n => n.id === id)
+                );
+                
+                const dialog = document.getElementById('ai-app-dialog');
+                const loading = dialog.querySelector('#ai-app-loading');
+                const result = dialog.querySelector('#ai-app-result');
+                const resultContent = dialog.querySelector('.ai-app-result-content');
+                
+                loading.classList.add('visible');
+                result.classList.remove('visible');
+                
+                try {
+                    const response = await this.aiAppStore.executeApp('note-merger', {
+                        notes: selectedNotesArray
+                    });
+                    
+                    loading.classList.remove('visible');
+                    result.classList.add('visible');
+                    
+                    if (response.success) {
+                        resultContent.innerHTML = `
+                            <strong>${response.title}</strong><br><br>
+                            <pre style="white-space: pre-wrap;">${response.mergedText}</pre>
+                        `;
+                        
+                        // 创建合并后的笔记
+                        const mergedNote = {
+                            id: Date.now(),
+                            text: response.mergedText,
+                            pills: response.pills,
+                            timestamp: new Date().toISOString(),
+                            hasAudio: false
+                        };
+                        
+                        this.notes.unshift(mergedNote);
+                        this.saveNotes();
+                        this.renderNotes();
+                        this.showToast('笔记已合并');
+                    } else {
+                        resultContent.textContent = '合并失败，请稍后重试';
+                    }
+                } catch (error) {
+                    loading.classList.remove('visible');
+                    result.classList.add('visible');
+                    resultContent.textContent = '错误: ' + error.message;
+                }
+            }
+
+            hideMcpPanel() {
+                this.mcpPanel.classList.remove('visible');
+                this.fab.style.display = 'flex';
+            }
+
+            // Note Management
+            sendNote() {
+                const content = this.parseContentEditable(this.noteText);
+                const text = content.text.trim();
+                
+                if (!text) {
+                    this.showToast('笔记内容不能为空');
+                    return;
+                }
+                
+                const note = {
+                    id: Date.now(),
+                    text: text,
+                    pills: content.pills,
+                    timestamp: new Date().toISOString(),
+                    hasAudio: this.isRecording || this.currentMode === 'voice'
+                };
+                
+                this.notes.unshift(note);
+                this.saveNotes();
+                this.renderNotes();
+                this.resetAll();
+                this.showToast('笔记已保存');
+            }
+
+            createQuickNote() {
+                const text = this.currentTranscript || '快速笔记';
+                const note = {
+                    id: Date.now(),
+                    text: text,
+                    pills: [{type: '#', text: '快速笔记'}],
+                    timestamp: new Date().toISOString(),
+                    hasAudio: true
+                };
+                
+                this.notes.unshift(note);
+                this.saveNotes();
+                this.renderNotes();
+                this.resetAll();
+                this.showToast('快速笔记已保存');
+            }
+
+            extractTags(text) {
+                const matches = text.match(/#[\u4e00-\u9fa5\w]+/g) || [];
+                return matches.map(tag => tag.substring(1));
+            }
+
+            extractMentions(text) {
+                const matches = text.match(/@[\u4e00-\u9fa5\w]+/g) || [];
+                return matches.map(mention => mention.substring(1));
+            }
+
+            extractFunctions(text) {
+                const matches = text.match(/![\u4e00-\u9fa5\w]+/g) || [];
+                return matches.map(func => func.substring(1));
+            }
+
+            renderNotes() {
+                this.mainContent.innerHTML = '';
+                
+                this.notes.forEach(note => {
+                    const card = this.createNoteCard(note);
+                    this.mainContent.appendChild(card);
+                });
+                
+                // Update profile stats if panel is visible
+                if (this.userProfilePanel && this.userProfilePanel.classList.contains('visible')) {
+                    this.updateProfileStats();
+                }
+            }
+
+            createNoteCard(note) {
+                const card = document.createElement('div');
+                card.className = 'note-card';
+                card.dataset.id = note.id;
+                
+                // Audio player
+                if (note.hasAudio) {
+                    const player = document.createElement('button');
+                    player.className = 'audio-player';
+                    player.textContent = '播放';
+                    player.onclick = (e) => {
+                        e.stopPropagation();
+                        this.showToast('播放录音');
+                    };
+                    card.appendChild(player);
+                }
+                
+                // Pills bar
+                if (note.pills && note.pills.length > 0) {
+                    const pillsBar = document.createElement('div');
+                    pillsBar.className = 'card-pills-bar';
+                    
+                    note.pills.forEach(pill => {
+                        const pillEl = document.createElement('span');
+                        let pillClass = '';
+                        if (pill.type === '#') pillClass = 'tag';
+                        else if (pill.type === '@') pillClass = 'mention';
+                        else if (pill.type === '!') pillClass = 'function';
+                        pillEl.className = `pill ${pillClass}`;
+                        pillEl.textContent = `${pill.type}${pill.text}`;
+                        pillsBar.appendChild(pillEl);
+                    });
+                    
+                    card.appendChild(pillsBar);
+                }
+                
+                // Text
+                const textDiv = document.createElement('div');
+                textDiv.className = 'card-text';
+                textDiv.innerHTML = this.renderPills(note.text, note.pills);
+                card.appendChild(textDiv);
+                
+                // Events
+                card.addEventListener('click', () => this.handleCardClick(note.id));
+                card.addEventListener('dblclick', () => this.handleCardDoubleClick(note.id));
+                
+                // Make draggable
+                card.draggable = true;
+                card.addEventListener('dragstart', (e) => this.handleCardDragStart(e, note.id));
+                
+                return card;
+            }
+
+            handleCardClick(noteId) {
+                const card = document.querySelector(`[data-id="${noteId}"]`);
+                if (this.selectedNotes.has(noteId)) {
+                    this.selectedNotes.delete(noteId);
+                    card.classList.remove('selected');
+                } else {
+                    this.selectedNotes.add(noteId);
+                    card.classList.add('selected');
+                }
+            }
+
+            handleCardDoubleClick(noteId) {
+                const note = this.notes.find(n => n.id === noteId);
+                if (!note) return;
+                
+                this.editingNoteId = noteId;
+                this.editText.innerHTML = this.renderPills(note.text, note.pills);
+                this.editDialog.classList.add('visible');
+                this.fab.style.display = 'none';
+            }
+
+            handleCardDragStart(e, noteId) {
+                if (!this.selectedNotes.has(noteId)) {
+                    // If not selected, select only this card
+                    this.selectedNotes.clear();
+                    document.querySelectorAll('.note-card.selected').forEach(card => {
+                        card.classList.remove('selected');
+                    });
+                    this.selectedNotes.add(noteId);
+                    e.target.classList.add('selected');
+                }
+                
+                // Show batch operations
+                setTimeout(() => {
+                    this.showBatchView();
+                }, 100);
+            }
+
+            showBatchView() {
+                const batchList = document.getElementById('batch-card-list');
+                batchList.innerHTML = '';
+                
+                this.selectedNotes.forEach(noteId => {
+                    const note = this.notes.find(n => n.id === noteId);
+                    if (note) {
+                        const card = this.createNoteCard(note);
+                        card.classList.add('batch-card-item');
+                        card.draggable = false;
+                        batchList.appendChild(card);
+                    }
+                });
+                
+                this.batchView.classList.add('visible');
+            }
+
+            hideBatchView() {
+                this.batchView.classList.remove('visible');
+                this.selectedNotes.clear();
+                document.querySelectorAll('.note-card.selected').forEach(card => {
+                    card.classList.remove('selected');
+                });
+            }
+
+            cancelEdit() {
+                this.editDialog.classList.remove('visible');
+                this.fab.style.display = 'flex';
+                this.editingNoteId = null;
+            }
+
+            saveEdit() {
+                const note = this.notes.find(n => n.id === this.editingNoteId);
+                if (note) {
+                    const content = this.parseContentEditable(this.editText);
+                    note.text = content.text;
+                    note.pills = content.pills;
+                    this.saveNotes();
+                    this.renderNotes();
+                }
+                this.cancelEdit();
+            }
+
+            // Search
+            handleSearch() {
+                const query = this.searchBar.value.toLowerCase().trim();
+                const cards = document.querySelectorAll('.note-card');
+                
+                cards.forEach(card => {
+                    const noteId = parseInt(card.dataset.id);
+                    const note = this.notes.find(n => n.id === noteId);
+                    
+                    if (!note) return;
+                    
+                    let visible = false;
+                    
+                    if (!query) {
+                        visible = true;
+                    } else if (query.startsWith('#')) {
+                        // Tag search
+                        const tagQuery = query.substring(1);
+                        visible = note.pills && note.pills.some(p => 
+                            p.type === '#' && p.text.toLowerCase().includes(tagQuery)
+                        );
+                    } else {
+                        // Text search
+                        visible = note.text.toLowerCase().includes(query);
+                    }
+                    
+                    card.style.display = visible ? 'block' : 'none';
+                });
+            }
+
+            // Utilities
+            showToast(message) {
+                this.toast.textContent = message;
+                this.toast.classList.add('visible');
+                setTimeout(() => {
+                    this.toast.classList.remove('visible');
+                }, 2000);
+            }
+            
+            // Parse content from contenteditable
+            parseContentEditable(editor) {
+                const textParts = [];
+                const pills = [];
+                
+                editor.childNodes.forEach(node => {
+                    if (node.nodeType === Node.TEXT_NODE) {
+                        textParts.push(node.textContent);
+                    } else if (node.nodeType === Node.ELEMENT_NODE && node.classList.contains('pill')) {
+                        const text = node.textContent;
+                        textParts.push(text);
+                        let type;
+                        if (node.classList.contains('tag')) type = '#';
+                        else if (node.classList.contains('mention')) type = '@';
+                        else if (node.classList.contains('function')) type = '!';
+                        pills.push({ text: text.substring(1), type: type });
+                    } else if (node.nodeType === Node.ELEMENT_NODE) {
+                        textParts.push(node.innerText);
+                    }
+                });
+                
+                return { text: textParts.join('').replace(/\u00A0/g, ' '), pills };
+            }
+            
+            // Render pills in text
+            renderPills(text, pills) {
+                const safeText = this.escapeHtml(text);
+                if (!pills || pills.length === 0) {
+                    return safeText;
+                }
+                
+                const pillMap = new Map();
+                pills.forEach(p => {
+                    const fullText = `${p.type}${p.text}`;
+                    let pillClass = '';
+                    if (p.type === '#') pillClass = 'tag';
+                    else if (p.type === '@') pillClass = 'mention';
+                    else if (p.type === '!') pillClass = 'function';
+                    const replacement = `<span class="pill ${pillClass}" contenteditable="false">${this.escapeHtml(fullText)}</span>`;
+                    pillMap.set(fullText, replacement);
+                });
+                
+                const allPillTexts = pills.map(p => this.escapeRegExp(`${p.type}${p.text}`)).join('|');
+                const regex = new RegExp(allPillTexts, 'g');
+                
+                return safeText.replace(regex, (match) => pillMap.get(match) || match);
+            }
+            
+            escapeHtml(text) {
+                return text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            }
+            
+            escapeRegExp(string) {
+                return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            }
+            
+            // Commit sigil
+            commitSigil(fullText, sigil, editor) {
+                const selection = window.getSelection();
+                if (!selection.rangeCount || !fullText) return;
+                const range = selection.getRangeAt(0);
+                const textNode = range.startContainer;
+                if (textNode.nodeType !== Node.TEXT_NODE) return;
+                
+                const textBeforeCursor = textNode.textContent.substring(0, range.startOffset);
+                const fullMatch = `${sigil}${fullText}`;
+                const startIndex = textBeforeCursor.lastIndexOf(sigil);
+                
+                if (startIndex !== -1) {
+                    range.setStart(textNode, startIndex);
+                    range.deleteContents();
+                    
+                    const pill = document.createElement('span');
+                    let pillClass = '';
+                    if (sigil === '#') {
+                        pillClass = 'tag';
+                        this.createdTags.add(fullText);
+                    } else if (sigil === '@') {
+                        pillClass = 'mention';
+                    } else if (sigil === '!') {
+                        pillClass = 'function';
+                    }
+                    
+                    pill.className = `pill ${pillClass}`;
+                    pill.textContent = `${sigil}${fullText}`;
+                    pill.contentEditable = 'false';
+                    range.insertNode(pill);
+                    
+                    const space = document.createTextNode('\u00A0');
+                    range.collapse(false);
+                    range.insertNode(space);
+                    range.collapse(false);
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                    this.hideSuggestionPopup();
+                    return true;
+                }
+                return false;
+            }
+            
+            // Intelligent Symbol System
+            handleEditorInput(e) {
+                const selection = window.getSelection();
+                if (!selection.rangeCount) return;
+                
+                const range = selection.getRangeAt(0);
+                const anchorNode = range.startContainer;
+                const anchorOffset = range.startOffset;
+                
+                if (anchorNode.nodeType !== Node.TEXT_NODE) {
+                    this.hideSuggestionPopup();
+                    return;
+                }
+                
+                const text = anchorNode.textContent.substring(0, anchorOffset);
+                const sigilMatch = text.match(/([#@!])([a-zA-Z0-9\u4e00-\u9fa5_]*)$/);
+                
+                if (sigilMatch) {
+                    this.showSuggestionPopup(sigilMatch[1], sigilMatch[2], e.target);
+                } else {
+                    this.hideSuggestionPopup();
+                }
+            }
+            
+            handleEditorKeyDown(e) {
+                const popupVisible = this.suggestionPopup.style.display === 'block';
+                
+                if (popupVisible && (e.key === 'Tab' || e.key === 'Enter')) {
+                    e.preventDefault();
+                    const highlighted = this.suggestionPopup.querySelector('.highlighted');
+                    if (highlighted) {
+                        const { anchorNode, anchorOffset } = window.getSelection();
+                        const textBeforeCursor = anchorNode.textContent.substring(0, anchorOffset);
+                        const match = textBeforeCursor.match(/([#@!])([a-zA-Z0-9\u4e00-\u9fa5_]*)$/);
+                        if (match) {
+                            this.commitSigil(highlighted.textContent, match[1], e.target);
+                        }
+                    }
+                    return;
+                }
+                
+                if (e.key === ' ' || e.key === 'Enter') {
+                    const selection = window.getSelection();
+                    if (!selection.rangeCount) return;
+                    const range = selection.getRangeAt(0);
+                    const textNode = range.startContainer;
+                    if (textNode.nodeType === Node.TEXT_NODE) {
+                        const text = textNode.textContent.substring(0, range.startOffset);
+                        const match = text.match(/([#@!])([a-zA-Z0-9\u4e00-\u9fa5_]*)$/);
+                        if (match && match[2]) {
+                            e.preventDefault();
+                            this.commitSigil(match[2], match[1], e.target);
+                        }
+                    }
+                }
+                
+                if (!popupVisible) return;
+                
+                const items = this.suggestionPopup.querySelectorAll('.suggestion-item');
+                if (items.length === 0) return;
+                let currentIndex = Array.from(items).findIndex(item => item.classList.contains('highlighted'));
+                
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    items[currentIndex].classList.remove('highlighted');
+                    currentIndex = (currentIndex + 1) % items.length;
+                    items[currentIndex].classList.add('highlighted');
+                    this.scrollSuggestionIntoView();
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    items[currentIndex].classList.remove('highlighted');
+                    currentIndex = (currentIndex - 1 + items.length) % items.length;
+                    items[currentIndex].classList.add('highlighted');
+                    this.scrollSuggestionIntoView();
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    this.hideSuggestionPopup();
+                }
+            }
+            
+            showSuggestionPopup(sigil, query, editor) {
+                let source;
+                if (sigil === '#') source = this.createdTags;
+                else if (sigil === '@') source = new Set(this.mockMentions);
+                else if (sigil === '!') source = new Set(this.mockFunctions);
+                else return;
+                
+                const suggestions = query 
+                    ? Array.from(source).filter(item => item.toLowerCase().startsWith(query.toLowerCase()))
+                    : Array.from(source);
+                
+                if (suggestions.length === 0) {
+                    this.hideSuggestionPopup();
+                    return;
+                }
+                
+                this.suggestionPopup.innerHTML = '';
+                suggestions.forEach((item, index) => {
+                    const el = document.createElement('div');
+                    el.className = 'suggestion-item';
+                    if (index === 0) el.classList.add('highlighted');
+                    el.textContent = item;
+                    el.onmousedown = (e) => {
+                        e.preventDefault();
+                        this.commitSigil(item, sigil, editor);
+                        editor.focus();
+                    };
+                    this.suggestionPopup.appendChild(el);
+                });
+                
+                const rect = window.getSelection().getRangeAt(0).getBoundingClientRect();
+                this.suggestionPopup.style.display = 'block';
+                this.suggestionPopup.style.top = `${window.scrollY + rect.bottom + 5}px`;
+                this.suggestionPopup.style.left = `${rect.left}px`;
+            }
+            
+            hideSuggestionPopup() {
+                this.suggestionPopup.style.display = 'none';
+            }
+            
+            scrollSuggestionIntoView() {
+                const highlightedItem = this.suggestionPopup.querySelector('.suggestion-item.highlighted');
+                if (highlightedItem) {
+                    highlightedItem.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+                }
+            }
+            
+
+            resetAll() {
+                // Stop recording
+                this.stopRecording();
+                
+                // Reset states
+                this.isRecording = false;
+                this.isLongPressing = false;
+                this.currentMode = null;
+                this.currentTranscript = '';
+                this.lastProcessedLength = 0;
+                
+                // Clear timers
+                if (this.longPressTimer) clearTimeout(this.longPressTimer);
+                if (this.longPressFullTimer) clearTimeout(this.longPressFullTimer);
+                if (this.clickTimer) clearTimeout(this.clickTimer);
+                
+                // Reset UI
+                this.fab.classList.remove('growing', 'expanded');
+                this.setFabState('initial');
+                this.hideNoteDialog();
+                this.hideSummaryDialog();
+                this.noteText.innerHTML = '';
+                this.summaryContent.textContent = '';
+                
+                // Reset buttons
+                this.pauseRecordBtn.textContent = '暂停';
+                this.pauseRecordBtn.onclick = () => this.pauseRecording();
+                
+                // Clear meeting agent UI
+                if (document.body.classList.contains('meeting-agent-mode')) {
+                    document.body.classList.remove('meeting-agent-mode');
+                    document.getElementById('intent-list').innerHTML = '';
+                    document.getElementById('search-list').innerHTML = '';
+                }
+            }
+
+            handleEscape() {
+                if (this.noteDialog.classList.contains('visible') || 
+                    this.summaryDialog.classList.contains('visible')) {
+                    this.resetAll();
+                } else if (this.editDialog.classList.contains('visible')) {
+                    this.cancelEdit();
+                } else if (this.batchView.classList.contains('visible')) {
+                    this.hideBatchView();
+                } else if (this.mcpPanel.classList.contains('visible')) {
+                    this.hideMcpPanel();
+                } else if (this.userProfilePanel.classList.contains('visible')) {
+                    this.closeUserProfile();
+                }
+            }
+
+            // Settings
+            loadSettings() {
+                const apiKey = localStorage.getItem('geminiApiKey');
+                if (apiKey) {
+                    document.getElementById('gemini-api-key').value = apiKey;
+                    // Update AI App Store
+                    this.aiAppStore.setApiKeys(apiKey, null);
+                }
+            }
+
+            // User Profile Methods
+            showUserProfile() {
+                this.userProfilePanel.classList.add('visible');
+                
+                // Update stats
+                this.updateProfileStats();
+                
+                // Load current API key
+                const apiKey = localStorage.getItem('geminiApiKey');
+                if (apiKey) {
+                    document.getElementById('gemini-api-key').value = apiKey;
+                }
+            }
+            
+            closeUserProfile() {
+                this.userProfilePanel.classList.remove('visible');
+            }
+            
+            updateProfileStats() {
+                // Update total notes
+                document.getElementById('total-notes').textContent = this.notes.length;
+                
+                // Update total tags
+                const allTags = new Set();
+                this.notes.forEach(note => {
+                    if (note.pills) {
+                        note.pills.forEach(pill => {
+                            if (pill.type === '#') {
+                                allTags.add(pill.text);
+                            }
+                        });
+                    }
+                });
+                document.getElementById('total-tags').textContent = allTags.size;
+            }
+            
+            saveSettings() {
+                const apiKey = document.getElementById('gemini-api-key').value.trim();
+                if (apiKey) {
+                    localStorage.setItem('geminiApiKey', apiKey);
+                    this.showToast('设置已保存');
+                    this.closeUserProfile();
+                    
+                    // Update meeting tools
+                    if (this.intentDetector) {
+                        this.intentDetector.setGeminiApiKey(apiKey);
+                    }
+                    if (this.searchManager) {
+                        this.searchManager.setGeminiApiKey(apiKey);
+                    }
+                    // Update AI App Store
+                    this.aiAppStore.setApiKeys(apiKey, null);
+                } else {
+                    this.showToast('请输入有效的API Key');
+                }
+            }
+
+
+            // Persistence
+            saveNotes() {
+                localStorage.setItem('voiceNotes', JSON.stringify(this.notes));
+            }
+
+            loadNotes() {
+                const saved = localStorage.getItem('voiceNotes');
+                if (saved) {
+                    this.notes = JSON.parse(saved);
+                    this.renderNotes();
+                }
+            }
+        }
+
+        // Initialize app
+        window.addEventListener('DOMContentLoaded', () => {
+            window.voiceNoteApp = new VoiceNoteApp();
+        });
+    </script>
+</body>
+</html>

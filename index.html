@@ -1,0 +1,1038 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>AI 语音笔记 V1.2 (最终修复版)</title>
+    <style>
+        :root {
+            --fab-height: 50px;
+            --fab-initial-width: 80px;
+            --fab-long-width: 50vw;
+            --fab-bottom-position: 15vh;
+            --dialog-bottom-margin: 15px;
+            --primary-bg: #ffffff;
+            --secondary-bg: #f5f5f5;
+            --primary-text: #000000;
+            --border-color: #e0e0e0;
+            --highlight-color: #007aff;
+            --tag-bg: #eef5ff;
+            --tag-text: #005fcc;
+            --mention-bg: #e6f6e6;
+            --mention-text: #006400;
+            --function-bg: #f3e8ff;
+            --function-text: #5d3d9c;
+            --duration: 0.3s;
+            --long-press-anim-duration: 2.1s;
+        }
+
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--secondary-bg);
+            height: 100vh;
+            overflow: hidden; /* Prevent body scroll */
+        }
+
+        #app-container {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #top-bar-container {
+            position: sticky;
+            top: 0;
+            background-color: var(--secondary-bg);
+            padding: 10px 15px;
+            z-index: 998;
+            border-bottom: 1px solid var(--border-color);
+            flex-shrink: 0;
+            position: relative; 
+        }
+
+        #search-bar {
+            width: 100%;
+            padding: 10px 15px;
+            border-radius: 20px;
+            border: 1px solid var(--border-color);
+            font-size: 16px;
+            box-sizing: border-box;
+            background-color: var(--primary-bg);
+        }
+        #search-bar:focus {
+            outline: none;
+            border-color: var(--highlight-color);
+        }
+
+        #summary-dialog {
+            font-size: 14px;
+            color: #555;
+            min-height: 20px;
+            display: none;
+        }
+        #summary-dialog.visible {
+            display: block;
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90vw;
+            max-width: 600px;
+            background-color: var(--primary-bg);
+            border-radius: 12px;
+            padding: 12px 16px;
+            margin-top: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            z-index: 999;
+            box-sizing: border-box;
+        }
+
+        #main-content {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 15px;
+            padding-bottom: calc(var(--fab-bottom-position) + var(--fab-height) + 20px);
+            box-sizing: border-box;
+        }
+
+        .note-card {
+            background-color: var(--primary-bg);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            border: 2px solid transparent;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+            position: relative;
+            cursor: pointer;
+        }
+
+        .note-card.selected {
+            border-color: var(--highlight-color);
+            box-shadow: 0 4px 12px rgba(0, 122, 255, 0.2);
+        }
+        
+        .card-pills-bar {
+            display: flex;
+            overflow-x: auto;
+            white-space: nowrap;
+            padding-bottom: 12px;
+            margin-bottom: 12px;
+            border-bottom: 1px solid var(--border-color);
+            gap: 8px;
+        }
+        .card-pills-bar::-webkit-scrollbar { display: none; }
+        .card-pills-bar { -ms-overflow-style: none; scrollbar-width: none; }
+
+
+        .card-text {
+            color: var(--primary-text);
+            font-size: 15px;
+            line-height: 1.7;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .audio-player {
+            position: absolute;
+            top: 0;
+            left: 0;
+            transform: translate(-6px, -50%);
+            background-color: #f0f0f0;
+            color: var(--primary-text);
+            border: none;
+            border-radius: 6px;
+            padding: 4px 0;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            width: 8.33%;
+            min-width: 40px;
+            text-align: center;
+            transition: background-color 0.2s, transform 0.2s ease;
+            z-index: 1;
+        }
+        .audio-player:hover {
+            background-color: #e0e0e0;
+            transform: translate(-6px, -50%) scale(1.05);
+        }
+
+        #fab {
+            position: fixed; left: 50%; bottom: var(--fab-bottom-position);
+            transform: translateX(-50%); height: var(--fab-height); width: var(--fab-initial-width);
+            background-color: var(--primary-bg); border-radius: calc(var(--fab-height) / 2);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; justify-content: center;
+            align-items: center; cursor: pointer; user-select: none;
+            transition: width var(--duration) ease, background-color var(--duration) ease;
+            overflow: hidden; z-index: 999;
+        }
+        #fab.growing { transition: width var(--long-press-anim-duration) linear; width: var(--fab-long-width); }
+        #fab.manual-mode { width: var(--fab-long-width); }
+        .fab-content {
+            display: none; align-items: center; justify-content: center;
+            width: 100%; height: 100%; color: var(--primary-text);
+            font-weight: 500; font-size: 14px;
+        }
+        #fab.active .fab-content.active { display: flex; }
+        .waveform span {
+            width: 3px; height: 5px; margin: 0 2px; background-color: var(--primary-text);
+            border-radius: 2px; animation: wave 1.2s infinite ease-in-out; display: inline-block;
+        }
+        .waveform span:nth-child(1) { animation-delay: -1.2s; } .waveform span:nth-child(2) { animation-delay: -1.0s; }
+        .waveform span:nth-child(3) { animation-delay: -0.8s; } .waveform span:nth-child(4) { animation-delay: -0.6s; }
+        .waveform span:nth-child(5) { animation-delay: -0.4s; }
+        @keyframes wave { 0%, 40%, 100% { transform: scaleY(1.0); } 20% { transform: scaleY(3.0); } }
+        .fab-button-group { display: flex; width: 100%; height: 100%; align-items: center; justify-content: space-around; }
+        .fab-button { flex: 1; text-align: center; }
+        .fab-divider { width: 1px; height: 40%; background-color: var(--border-color); }
+
+        .dialog {
+            position: fixed; left: 50%; transform: translateX(-50%);
+            background-color: var(--primary-bg); border-radius: 16px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.1); padding: 20px;
+            box-sizing: border-box; opacity: 0; visibility: hidden;
+            transition: opacity var(--duration) ease, transform var(--duration) ease, visibility var(--duration) ease;
+            z-index: 1000;
+        }
+        .dialog.visible { opacity: 1; visibility: visible; }
+
+        #note-dialog, #edit-dialog {
+            width: 90vw; max-width: 600px;
+            bottom: calc(var(--fab-bottom-position) + var(--fab-height) + var(--dialog-bottom-margin));
+            transform: translate(-50%, 10px);
+        }
+        #note-dialog.visible, #edit-dialog.visible { transform: translate(-50%, 0); }
+        
+        .rich-textarea {
+            width: 100%; height: 150px; border: none;
+            background-color: transparent; resize: none;
+            font-size: 16px; line-height: 1.6; color: var(--primary-text);
+            overflow-y: auto;
+        }
+        .rich-textarea:focus { outline: none; }
+        .rich-textarea[placeholder]:empty:before {
+            content: attr(placeholder);
+            color: #aaa;
+            cursor: text;
+        }
+
+        .pill {
+            padding: 2px 8px; border-radius: 12px;
+            font-weight: 500; font-size: 0.9em;
+            display: inline-block; margin: 0 2px;
+            white-space: nowrap; user-select: none;
+            flex-shrink: 0; /* Prevent pills from shrinking in the flex container */
+        }
+        .pill.tag { background-color: var(--tag-bg); color: var(--tag-text); }
+        .pill.mention { background-color: var(--mention-bg); color: var(--mention-text); }
+        .pill.function { background-color: var(--function-bg); color: var(--function-text); }
+        
+        .dialog-actions {
+            margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border-color);
+            display: flex; gap: 15px; justify-content: flex-end;
+        }
+        .action-button {
+            background: #f0f0f0; border: none; padding: 8px 16px; border-radius: 8px;
+            cursor: pointer; font-size: 14px; font-weight: 500;
+        }
+        .action-button.primary { background: var(--highlight-color); color: white; }
+
+        #toast {
+            position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+            background-color: rgba(0,0,0,0.75); color: white; padding: 10px 20px;
+            border-radius: 25px; font-size: 14px; z-index: 1002; opacity: 0;
+            transition: opacity 0.5s ease; pointer-events: none;
+        }
+        #toast.show { opacity: 1; }
+
+        #bulk-operations-view {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background-color: rgba(255, 255, 255, 0.5); backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px); z-index: 1001; display: none; flex-direction: row;
+        }
+        #bulk-operations-view.visible { display: flex; }
+        #selected-cards-list, #bulk-actions-list {
+            width: 50%; height: 100%; overflow-y: auto; padding: 40px; box-sizing: border-box;
+        }
+        #bulk-actions-list {
+            display: flex; flex-direction: column; justify-content: center; gap: 20px;
+        }
+        .bulk-action-item {
+            background: var(--primary-bg); padding: 20px; border-radius: 12px;
+            text-align: center; font-size: 18px; font-weight: 500;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1); cursor: pointer;
+        }
+        #selected-cards-list .note-card { cursor: default; margin-bottom: 15px; }
+
+        #suggestion-popup {
+            position: absolute;
+            background-color: var(--primary-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            max-height: 150px;
+            overflow-y: auto;
+            z-index: 1001;
+            display: none;
+        }
+        .suggestion-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 14px;
+            color: var(--primary-text);
+            transition: background-color 0.1s ease, color 0.1s ease;
+        }
+        .suggestion-item:hover, .suggestion-item.highlighted {
+            background-color: var(--tag-bg);
+            color: var(--tag-text);
+        }
+
+        #mcp-center {
+            position: fixed; bottom: 0; left: 0; right: 0;
+            height: 50vh;
+            background-color: var(--primary-bg);
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.1);
+            transform: translateY(100%);
+            transition: transform 0.4s ease-in-out;
+            z-index: 1001;
+            display: flex;
+            flex-direction: column;
+        }
+        #mcp-center.visible {
+            transform: translateY(0);
+        }
+        #mcp-handle {
+            width: 40px;
+            height: 5px;
+            background-color: var(--border-color);
+            border-radius: 2.5px;
+            margin: 10px auto;
+            cursor: grab;
+        }
+        #mcp-grid {
+            flex-grow: 1;
+            padding: 15px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 15px;
+            overflow-y: auto;
+        }
+        .mcp-item {
+            background-color: var(--secondary-bg);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 500;
+            text-align: center;
+            padding: 10px;
+            cursor: pointer;
+        }
+
+    </style>
+</head>
+<body>
+    
+    <div id="app-container">
+        <div id="top-bar-container">
+            <input type="search" id="search-bar" placeholder="搜索笔记或 #标签">
+            <div id="summary-dialog">
+                <div id="summary-content">...</div>
+            </div>
+        </div>
+
+        <main id="main-content"></main>
+    </div>
+
+    <div id="fab">
+        <div id="fab-initial" class="fab-content active" style="font-weight: bold;">笔记</div>
+        <div id="fab-recording" class="fab-content">
+            <div class="waveform"><span></span><span></span><span></span><span></span><span></span></div>
+        </div>
+        <div id="fab-paused-longpress" class="fab-content"><div class="fab-button">暂停</div></div>
+        <div id="fab-paused-control" class="fab-content">
+            <div class="fab-button-group">
+                <div class="fab-button" id="btn-continue">继续录音</div>
+                <div class="fab-divider"></div>
+                <div class="fab-button" id="btn-send">发送</div>
+            </div>
+        </div>
+        <div id="fab-manual-control" class="fab-content">
+            <div class="fab-button-group">
+                <div class="fab-button" id="btn-record-manual">录音</div>
+                <div class="fab-divider"></div>
+                <div class="fab-button" id="btn-send-manual">发送</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="note-dialog" class="dialog">
+        <div id="note-editor" class="rich-textarea" contenteditable="true" placeholder="输入内容, 使用 #标签, @提及, !函数..."></div>
+        <div class="dialog-actions">
+            <button class="action-button">上传图片</button>
+            <button class="action-button">添加Header</button>
+        </div>
+    </div>
+
+    <div id="edit-dialog" class="dialog">
+        <div id="edit-editor" class="rich-textarea" contenteditable="true"></div>
+        <div class="dialog-actions">
+            <button id="btn-cancel-edit" class="action-button">取消</button>
+            <button id="btn-save-edit" class="action-button primary">保存</button>
+        </div>
+    </div>
+
+    <div id="bulk-operations-view">
+        <div id="selected-cards-list"></div>
+        <div id="bulk-actions-list">
+            <div class="bulk-action-item">AI合并笔记</div><div class="bulk-action-item">转发到微信/小红书</div>
+            <div class="bulk-action-item">AI搜索</div><div class="bulk-action-item">创建新分类</div>
+        </div>
+    </div>
+
+    <div id="mcp-center">
+        <div id="mcp-handle"></div>
+        <div id="mcp-grid"></div>
+    </div>
+
+    <div id="toast"></div>
+    <div id="suggestion-popup"></div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // --- DOM 元素获取 ---
+        const fab = document.getElementById('fab');
+        const noteDialog = document.getElementById('note-dialog');
+        const summaryDialog = document.getElementById('summary-dialog');
+        const noteEditor = document.getElementById('note-editor');
+        const summaryContent = document.getElementById('summary-content');
+        const toast = document.getElementById('toast');
+        const mainContent = document.getElementById('main-content');
+        const editDialog = document.getElementById('edit-dialog');
+        const editEditor = document.getElementById('edit-editor');
+        const bulkOperationsView = document.getElementById('bulk-operations-view');
+        const selectedCardsList = document.getElementById('selected-cards-list');
+        const searchBar = document.getElementById('search-bar');
+        const suggestionPopup = document.getElementById('suggestion-popup');
+        const mcpCenter = document.getElementById('mcp-center');
+        const mcpGrid = document.getElementById('mcp-grid');
+
+        const fabStates = {
+            initial: document.getElementById('fab-initial'), recording: document.getElementById('fab-recording'),
+            pausedLongpress: document.getElementById('fab-paused-longpress'), pausedControl: document.getElementById('fab-paused-control'),
+            manualControl: document.getElementById('fab-manual-control'),
+        };
+
+        // --- 状态变量 ---
+        let pressTimer = null, longPressFullTimer = null, clickTimer = null;
+        let pressStartTime = 0;
+        let isRecording = false, isAsrActive = false, isDialogVisible = false;
+        let clickCount = 0;
+        let asrSimulator = null, summarySimulator = null;
+        let currentSessionHasAudio = false;
+        let gestureStartY = 0;
+
+        // --- 数据管理 (内存缓存) ---
+        let notesData = [];
+        let selectedCardIds = [];
+        let editingCardId = null;
+        
+        const mockData = {
+            tags: new Set(['项目', '灵感', '待办', '会议纪要', '非常长的标签名用来测试滚动条']),
+            mentions: new Set(['张三', '李四', '项目经理小王', '设计师伙伴']),
+            functions: new Set(['总结全文', '创建待办事项', '发送邮件给', '翻译成英文']),
+            mcpApps: ["AI 摘要", "任务清单", "图表生成", "会议助手", "灵感白板"]
+        };
+        
+        function loadData() {
+            if (notesData.length === 0) {
+                 notesData = [
+                    { id: 1, text: "这是我的第一个笔记, 里面有一个#项目 标签, 并且还@设计师伙伴 一起完成。同时，我们还需要!总结全文", pills: [{type: '#', text: '项目'}, {type: '@', text: '设计师伙伴'}, {type: '!', text: '总结全文'}, {type: '#', text: '非常长的标签名用来测试滚动条'}, {type: '#', text: '灵感'}], hasAudio: true },
+                    { id: 2, text: "提醒@项目经理小王 明天开会讨论需求。", pills: [{type: '@', text: '项目经理小王'}], hasAudio: false },
+                    { id: 3, text: "需要对这篇文章 !总结全文", pills: [{type: '!', text: '总结全文'}], hasAudio: false }
+                 ];
+            }
+        }
+
+        const mockAsrText = "这是一个 #演示, 我想 @张三 帮我一起完成。我们首先需要 !总结全文, 然后再进行下一步。";
+        
+        // --- 核心功能函数 ---
+        function stopAsrSimulation() { clearInterval(asrSimulator); asrSimulator = null; isAsrActive = false; }
+        function stopSimulators() { stopAsrSimulation(); clearInterval(summarySimulator); summarySimulator = null; }
+        function showToast(message) { toast.textContent = message; toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 2000); }
+        function setFabState(stateName) { fab.classList.add('active'); Object.values(fabStates).forEach(el => el.classList.remove('active')); if (fabStates[stateName]) fabStates[stateName].classList.add('active'); }
+        
+        function showDialog(type) { 
+            isDialogVisible = true; 
+            if (type === 'note' || type === 'all') {
+                noteDialog.classList.add('visible');
+            }
+            if (type === 'summary' || type === 'all') {
+                summaryDialog.classList.add('visible');
+            }
+        }
+
+        function resetUI() {
+            isRecording = isAsrActive = isDialogVisible = false; pressStartTime = 0; currentSessionHasAudio = false;
+            fab.className = ''; setFabState('initial');
+            noteDialog.classList.remove('visible'); summaryDialog.classList.remove('visible');
+            editDialog.classList.remove('visible');
+            setTimeout(() => { noteEditor.innerHTML = ''; summaryContent.textContent = '...'; }, 300);
+            stopSimulators(); clearTimeout(pressTimer); clearTimeout(longPressFullTimer);
+        }
+        function startAsrSimulation(editor) {
+            stopSimulators(); isAsrActive = true; currentSessionHasAudio = true;
+            let i = parseContentEditable(editor).text.split(' ').length -1; if (i < 0) i = 0;
+            const asrContent = mockAsrText.split(' ').filter(Boolean);
+            asrSimulator = setInterval(() => {
+                if (i < asrContent.length) {
+                    const word = asrContent[i];
+                    const sigil = word.charAt(0);
+                    if (['#', '@', '!'].includes(sigil) && word.length > 1) {
+                        commitSigil(word.substring(1), sigil, editor);
+                    } else {
+                        insertTextAtCursor(editor, (editor.innerText.length > 0 ? " " : "") + word);
+                    }
+                    i++;
+                } else { stopAsrSimulation(); }
+            }, 800);
+        }
+        function startSummarySimulation() {
+             summarySimulator = setInterval(() => {
+                const text = parseContentEditable(noteEditor).text;
+                const words = text.split(/\s+/).slice(0, 10);
+                summaryContent.textContent = words.join(' ') + (words.length > 0 ? '...' : '');
+            }, 1000);
+        }
+        
+        // --- 笔记卡片核心逻辑 ---
+        function addNote(content) {
+            if (!content.text || content.text.trim() === '') { showToast("笔记内容不能为空"); return; }
+            const note = { id: Date.now(), ...content };
+            notesData.unshift(note);
+            renderAllCards();
+            showToast("笔记已保存");
+        }
+        function renderAllCards() {
+            mainContent.innerHTML = '';
+            notesData.forEach(note => {
+                const cardElement = createNoteCardElement(note);
+                mainContent.appendChild(cardElement);
+            });
+            handleSearch();
+        }
+
+        function createNoteCardElement(note) {
+            const card = document.createElement('div');
+            card.className = 'note-card'; card.dataset.id = note.id; card.draggable = true;
+            
+            if (note.hasAudio) {
+                const player = document.createElement('button');
+                player.className = 'audio-player'; player.textContent = '播放';
+                player.onclick = (e) => { e.stopPropagation(); showToast(`正在播放笔记 #${note.id} 的录音`); };
+                card.appendChild(player);
+            }
+
+            if (note.pills && note.pills.length > 0) {
+                const pillsBar = document.createElement('div');
+                pillsBar.className = 'card-pills-bar';
+                note.pills.forEach(pill => {
+                    const pillEl = document.createElement('span');
+                    let pillClass = '';
+                    if (pill.type === '#') pillClass = 'tag';
+                    else if (pill.type === '@') pillClass = 'mention';
+                    else if (pill.type === '!') pillClass = 'function';
+                    pillEl.className = `pill ${pillClass}`;
+                    pillEl.textContent = `${pill.type}${pill.text}`;
+                    pillsBar.appendChild(pillEl);
+                });
+                card.appendChild(pillsBar);
+            }
+
+            const textDiv = document.createElement('div');
+            textDiv.className = 'card-text';
+            textDiv.innerHTML = renderPills(note.text, note.pills);
+            card.appendChild(textDiv);
+
+            card.addEventListener('click', () => handleCardClick(note.id));
+            card.addEventListener('dblclick', () => handleCardDblClick(note.id));
+            card.addEventListener('dragstart', (e) => handleCardDragStart(e, note.id));
+            return card;
+        }
+
+        function escapeHtml(text) { return text.replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+        function escapeRegExp(string) {
+            return string.replace(/[.*+?^${}()|[]]/g, '\\$&');
+        }
+
+        // --- 智能符号 (Sigil) 系统核心逻辑 ---
+        function parseContentEditable(editor) {
+            const textParts = [];
+            const pills = [];
+            editor.childNodes.forEach(node => {
+                if (node.nodeType === Node.TEXT_NODE) { textParts.push(node.textContent); }
+                else if (node.nodeType === Node.ELEMENT_NODE && node.classList.contains('pill')) {
+                    const text = node.textContent;
+                    textParts.push(text);
+                    let type;
+                    if (node.classList.contains('tag')) type = '#';
+                    else if (node.classList.contains('mention')) type = '@';
+                    else if (node.classList.contains('function')) type = '!';
+                    pills.push({ text: text.substring(1), type: type });
+                } else if (node.nodeType === Node.ELEMENT_NODE) { textParts.push(node.innerText); }
+            });
+            return { text: textParts.join('').replace(/\u00A0/g, ' '), pills };
+        }
+
+        function renderPills(text, pills) {
+            const safeText = escapeHtml(text);
+            if (!pills || pills.length === 0) {
+                return safeText;
+            }
+
+            const pillMap = new Map();
+            pills.forEach(p => {
+                const fullText = `${p.type}${p.text}`;
+                let pillClass = '';
+                if (p.type === '#') pillClass = 'tag';
+                else if (p.type === '@') pillClass = 'mention';
+                else if (p.type === '!') pillClass = 'function';
+                const replacement = `<span class="pill ${pillClass}" contenteditable="false">${escapeHtml(fullText)}</span>`;
+                pillMap.set(fullText, replacement);
+            });
+            
+            const allPillTexts = pills.map(p => escapeRegExp(`${p.type}${p.text}`)).join('|');
+            const regex = new RegExp(allPillTexts, 'g');
+
+            return safeText.replace(regex, (match) => pillMap.get(match) || match);
+        }
+
+        function commitSigil(fullText, sigil, editor) {
+            const selection = window.getSelection();
+            if (!selection.rangeCount || !fullText) return;
+            const range = selection.getRangeAt(0);
+            const textNode = range.startContainer;
+            if (textNode.nodeType !== Node.TEXT_NODE) return;
+
+            const textBeforeCursor = textNode.textContent.substring(0, range.startOffset);
+            const match = textBeforeCursor.match(new RegExp(`${escapeRegExp(sigil)}([a-zA-Z0-9\u4e00-\u9fa5_]*)$`));
+
+            if (match) {
+                const partialText = match[0];
+                const startIndex = textBeforeCursor.lastIndexOf(partialText);
+                range.setStart(textNode, startIndex);
+                range.deleteContents();
+
+                const pill = document.createElement('span');
+                let pillClass = '';
+                if (sigil === '#') { pillClass = 'tag'; mockData.tags.add(fullText); }
+                else if (sigil === '@') { pillClass = 'mention'; mockData.mentions.add(fullText); }
+                else if (sigil === '!') { pillClass = 'function'; mockData.functions.add(fullText); }
+                
+                pill.className = `pill ${pillClass}`;
+                pill.textContent = `${sigil}${fullText}`;
+                pill.contentEditable = 'false';
+                range.insertNode(pill);
+
+                const space = document.createTextNode('\u00A0');
+                range.collapse(false);
+                range.insertNode(space);
+                range.collapse(false);
+                selection.removeAllRanges();
+                selection.addRange(range);
+                hideSuggestionPopup();
+                return true;
+            }
+            return false;
+        }
+
+        function handleEditorInput(e) {
+            const { anchorNode, anchorOffset } = window.getSelection();
+            if (!anchorNode || anchorNode.nodeType !== Node.TEXT_NODE) { hideSuggestionPopup(); return; }
+
+            const text = anchorNode.textContent.substring(0, anchorOffset);
+            const sigilMatch = text.match(/([#@!])([a-zA-Z0-9\u4e00-\u9fa5_]*)$/);
+
+            if (sigilMatch) {
+                showSuggestionPopup(sigilMatch[1], sigilMatch[2], e.target);
+            } else {
+                hideSuggestionPopup();
+            }
+        }
+
+        function showSuggestionPopup(sigil, query, editor) {
+            let source;
+            if (sigil === '#') source = mockData.tags;
+            else if (sigil === '@') source = mockData.mentions;
+            else if (sigil === '!') source = mockData.functions;
+            else return;
+
+            const suggestions = query 
+                ? Array.from(source).filter(item => item.toLowerCase().startsWith(query.toLowerCase()))
+                : Array.from(source);
+            
+            if (suggestions.length === 0) { hideSuggestionPopup(); return; }
+
+            suggestionPopup.innerHTML = '';
+            suggestions.forEach((item, index) => {
+                const el = document.createElement('div');
+                el.className = 'suggestion-item';
+                if (index === 0) el.classList.add('highlighted');
+                el.textContent = item;
+                el.onmousedown = (e) => { e.preventDefault(); commitSigil(item, sigil, editor); editor.focus(); };
+                suggestionPopup.appendChild(el);
+            });
+
+            const rect = window.getSelection().getRangeAt(0).getBoundingClientRect();
+            suggestionPopup.style.display = 'block';
+            suggestionPopup.style.top = `${window.scrollY + rect.bottom + 5}px`;
+            suggestionPopup.style.left = `${rect.left}px`;
+        }
+
+        function hideSuggestionPopup() { suggestionPopup.style.display = 'none'; }
+        
+        function scrollSuggestionIntoView() {
+            const highlightedItem = suggestionPopup.querySelector('.suggestion-item.highlighted');
+            if (highlightedItem) { highlightedItem.scrollIntoView({ block: 'nearest', behavior: 'auto' }); }
+        }
+
+        function handleEditorKeyDown(e) {
+            const popupVisible = suggestionPopup.style.display === 'block';
+
+            if (popupVisible && (e.key === 'Tab' || e.key === 'Enter')) {
+                e.preventDefault(); 
+                const highlighted = suggestionPopup.querySelector('.highlighted');
+                if (highlighted) {
+                    const { anchorNode, anchorOffset } = window.getSelection();
+                    const textBeforeCursor = anchorNode.textContent.substring(0, anchorOffset);
+                    const match = textBeforeCursor.match(/([#@!])([a-zA-Z0-9\u4e00-\u9fa5_]*)$/);
+                    if (match) {
+                        commitSigil(highlighted.textContent, match[1], e.target);
+                    }
+                }
+                return;
+            }
+
+            if (e.key === ' ' || e.key === 'Enter') {
+                const selection = window.getSelection();
+                if (!selection.rangeCount) return;
+                const range = selection.getRangeAt(0);
+                const textNode = range.startContainer;
+                
+                if (textNode.nodeType === Node.TEXT_NODE) {
+                    const textBeforeCursor = textNode.textContent.substring(0, range.startOffset);
+                    const match = textBeforeCursor.match(/([#@!])([a-zA-Z0-9\u4e00-\u9fa5_]+)$/);
+                    if (match) {
+                        e.preventDefault();
+                        commitSigil(match[2], match[1], e.target);
+                        return;
+                    }
+                }
+            }
+            
+            if (!popupVisible) return;
+
+            const items = suggestionPopup.querySelectorAll('.suggestion-item');
+            if (items.length === 0) return;
+            let currentIndex = Array.from(items).findIndex(item => item.classList.contains('highlighted'));
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                items[currentIndex].classList.remove('highlighted');
+                currentIndex = (currentIndex + 1) % items.length;
+                items[currentIndex].classList.add('highlighted');
+                scrollSuggestionIntoView();
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                items[currentIndex].classList.remove('highlighted');
+                currentIndex = (currentIndex - 1 + items.length) % items.length;
+                items[currentIndex].classList.add('highlighted');
+                scrollSuggestionIntoView();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                hideSuggestionPopup();
+            }
+        }
+        
+        function insertTextAtCursor(editor, text) {
+            const sel = window.getSelection();
+            if (sel.rangeCount > 0) {
+                const range = sel.getRangeAt(0);
+                range.deleteContents();
+                const textNode = document.createTextNode(text);
+                range.insertNode(textNode);
+                range.setStartAfter(textNode);
+                sel.removeAllRanges();
+                sel.addRange(range);
+            }
+        }
+
+        // --- 搜索功能 ---
+        function handleSearch() {
+            const query = searchBar.value.toLowerCase().trim();
+            const isTagSearch = query.startsWith('#');
+            const tagQuery = isTagSearch ? query.substring(1) : '';
+
+            notesData.forEach(note => {
+                let isVisible = false;
+                if (query === '') { isVisible = true; } 
+                else if (isTagSearch) {
+                    if (tagQuery) { isVisible = note.pills.some(p => p.type === '#' && p.text.toLowerCase().includes(tagQuery)); } 
+                    else { isVisible = true; }
+                } else { isVisible = note.text.toLowerCase().includes(query); }
+                
+                const cardElement = mainContent.querySelector(`.note-card[data-id='${note.id}']`);
+                if (cardElement) {
+                    cardElement.style.display = isVisible ? '' : 'none';
+                }
+            });
+        }
+
+        // --- 事件监听器 ---
+        fab.addEventListener('mousedown', pressStart);
+        fab.addEventListener('touchstart', pressStart, { passive: false });
+        
+        noteEditor.addEventListener('click', () => {
+            if (isAsrActive) {
+                stopAsrSimulation();
+                setFabState('pausedControl');
+            }
+        });
+        
+        editEditor.addEventListener('input', handleEditorInput);
+        editEditor.addEventListener('keydown', handleEditorKeyDown);
+        noteEditor.addEventListener('input', handleEditorInput);
+        noteEditor.addEventListener('keydown', handleEditorKeyDown);
+        
+        searchBar.addEventListener('input', handleSearch);
+        document.addEventListener('click', (e) => { if (!noteEditor.contains(e.target) && !editEditor.contains(e.target)) hideSuggestionPopup(); });
+
+        fab.addEventListener('click', (e) => {
+            const target = e.target.closest('.fab-button'); if (!target) return;
+            const targetId = target.id;
+            if (fabStates.pausedLongpress.contains(target)) { 
+                stopAsrSimulation(); 
+                setFabState('pausedControl');
+            }
+            else if (targetId === 'btn-continue') { 
+                noteEditor.focus();
+                startAsrSimulation(noteEditor);
+                setFabState('pausedLongpress'); 
+            }
+            else if (targetId === 'btn-send' || targetId === 'btn-send-manual') {
+                const content = parseContentEditable(noteEditor);
+                content.hasAudio = currentSessionHasAudio;
+                addNote(content);
+                resetUI();
+            }
+            // BUG FIX 1: Ensure focus is set before starting ASR.
+            else if (targetId === 'btn-record-manual') { 
+                showToast("已切换至语音输入"); 
+                setFabState('pausedLongpress'); 
+                noteEditor.focus();
+                startAsrSimulation(noteEditor); 
+            }
+        });
+
+        // --- 剩余的交互逻辑 ---
+        function handleCardClick(noteId) {
+            const cardElement = mainContent.querySelector(`.note-card[data-id='${noteId}']`);
+            if (!cardElement) return;
+
+            const index = selectedCardIds.indexOf(noteId);
+            if (index > -1) {
+                selectedCardIds.splice(index, 1);
+                cardElement.classList.remove('selected');
+            } else {
+                selectedCardIds.push(noteId);
+                cardElement.classList.add('selected');
+            }
+        }
+
+        function handleCardDblClick(noteId) {
+            const note = notesData.find(n => n.id === noteId); if (!note) return;
+            editingCardId = noteId;
+            editEditor.innerHTML = renderPills(note.text, note.pills);
+            editDialog.classList.add('visible'); fab.style.display = 'none';
+        }
+
+        function handleCardDragStart(event, noteId) {
+            if (selectedCardIds.length === 0 || !selectedCardIds.includes(noteId)) {
+                event.preventDefault();
+                return;
+            }
+            showBulkOperationsView();
+        }
+
+        function showBulkOperationsView() {
+            selectedCardsList.innerHTML = '';
+            const selectedNotes = notesData.filter(note => selectedCardIds.includes(note.id));
+            
+            selectedNotes.sort((a, b) => selectedCardIds.indexOf(a.id) - selectedCardIds.indexOf(b.id));
+
+            selectedNotes.forEach(note => {
+                const cardClone = createNoteCardElement(note);
+                cardClone.classList.add('selected');
+                cardClone.draggable = false;
+                cardClone.onclick = null;
+                cardClone.ondblclick = null;
+                selectedCardsList.appendChild(cardClone);
+            });
+            bulkOperationsView.classList.add('visible');
+        }
+
+        function hideBulkOperationsView() { 
+            bulkOperationsView.classList.remove('visible'); 
+            selectedCardIds = [];
+            document.querySelectorAll('.note-card.selected').forEach(card => card.classList.remove('selected'));
+        }
+        
+        document.getElementById('btn-save-edit').addEventListener('click', () => {
+            const note = notesData.find(n => n.id === editingCardId);
+            if (note) {
+                const content = parseContentEditable(editEditor);
+                note.text = content.text; note.pills = content.pills;
+                renderAllCards();
+            }
+            editDialog.classList.remove('visible'); fab.style.display = 'flex'; editingCardId = null;
+        });
+        document.getElementById('btn-cancel-edit').addEventListener('click', () => {
+            editDialog.classList.remove('visible'); fab.style.display = 'flex'; editingCardId = null;
+        });
+        
+        bulkOperationsView.addEventListener('click', (e) => { 
+            if (e.target.classList.contains('bulk-action-item')) {
+                showToast(`对 ${selectedCardIds.length} 个笔记执行了 "${e.target.textContent}"`);
+                hideBulkOperationsView();
+            } else if (e.target === bulkOperationsView) {
+                hideBulkOperationsView();
+            }
+        });
+        
+        function handleGestureMove(event) {
+            if (pressStartTime === 0) return;
+            const currentY = event.type === 'touchmove' ? event.touches[0].clientY : event.clientY;
+            if (Math.abs(gestureStartY - currentY) > 20) {
+                clearTimeout(pressTimer);
+                clearTimeout(longPressFullTimer);
+                window.removeEventListener('mousemove', handleGestureMove);
+                window.removeEventListener('touchmove', handleGestureMove);
+            }
+        }
+
+        function pressStart(event) {
+            if (isDialogVisible || mcpCenter.classList.contains('visible')) return;
+            event.preventDefault(); 
+            pressStartTime = Date.now(); 
+            isRecording = false;
+            gestureStartY = event.type === 'touchstart' ? event.touches[0].clientY : event.clientY;
+            
+            window.addEventListener('mouseup', pressEnd, { once: true });
+            window.addEventListener('touchend', pressEnd, { once: true });
+            window.addEventListener('mousemove', handleGestureMove);
+            window.addEventListener('touchmove', handleGestureMove);
+
+            pressTimer = setTimeout(() => {
+                isRecording = true; setFabState('recording'); fab.classList.add('growing');
+                // BUG FIX 2: Ensure focus is set before starting ASR.
+                longPressFullTimer = setTimeout(() => {
+                    if (!isRecording) return; 
+                    showDialog('note');
+                    setFabState('pausedLongpress');
+                    setTimeout(() => { // Use a minimal timeout to ensure dialog is rendered before focusing
+                        noteEditor.focus();
+                        startAsrSimulation(noteEditor);
+                    }, 50);
+                }, 2100);
+            }, 250);
+        }
+
+        function pressEnd(event) {
+            window.removeEventListener('mousemove', handleGestureMove);
+            window.removeEventListener('touchmove', handleGestureMove);
+            
+            if (pressStartTime === 0) return; 
+            
+            const endY = event.type === 'touchend' ? event.changedTouches[0].clientY : event.clientY;
+            
+            if (endY && (gestureStartY - endY > 50)) {
+                showMcpCenter();
+                clearTimeout(pressTimer);
+                clearTimeout(longPressFullTimer);
+                pressStartTime = 0;
+                isRecording = false;
+                return;
+            }
+
+            const duration = Date.now() - pressStartTime;
+            if (isRecording) {
+                 if (duration < 800) { showToast("录音时间过短"); resetUI(); }
+                 else if (duration < 2500) {
+                    addNote({text: `(快速笔记) ${mockAsrText.substring(0, 20)}...`, pills: [{type: '#', text: '快速笔记'}], hasAudio: true});
+                    resetUI();
+                 }
+            } else { 
+                if (duration < 250) { 
+                    processClick(); 
+                } 
+            }
+            
+            clearTimeout(pressTimer); 
+            clearTimeout(longPressFullTimer); 
+            isRecording = false; 
+            pressStartTime = 0;
+        }
+
+        function processClick() {
+            clickCount++; clearTimeout(clickTimer);
+            clickTimer = setTimeout(() => {
+                if (clickCount === 1) handleShortPress();
+                else if (clickCount >= 3) handleTripleClick();
+                clickCount = 0;
+            }, 300);
+        }
+        function handleShortPress() { showDialog('note'); fab.classList.add('manual-mode'); setFabState('manualControl'); currentSessionHasAudio = false; }
+        
+        // BUG FIX 3: Add class to grow FAB and ensure focus before ASR.
+        function handleTripleClick() {
+            showDialog('all');
+            fab.classList.add('manual-mode');
+            setFabState('pausedLongpress');
+            startSummarySimulation();
+            setTimeout(() => { // Use a minimal timeout to ensure dialog is rendered before focusing
+                noteEditor.focus();
+                startAsrSimulation(noteEditor);
+            }, 50);
+        }
+        
+        // MCP Center Logic
+        function showMcpCenter() { mcpCenter.classList.add('visible'); fab.style.display = 'none'; }
+        function hideMcpCenter() { mcpCenter.classList.remove('visible'); fab.style.display = 'flex'; }
+        mcpGrid.innerHTML = mockData.mcpApps.map(app => `<div class="mcp-item">${app}</div>`).join('');
+        document.getElementById('mcp-handle').addEventListener('click', hideMcpCenter);
+
+        // Global ESC key handler
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                if (suggestionPopup.style.display === 'block') hideSuggestionPopup();
+                else if (noteDialog.classList.contains('visible') || editDialog.classList.contains('visible')) {
+                    resetUI();
+                    document.getElementById('btn-cancel-edit').click();
+                }
+                else if (bulkOperationsView.classList.contains('visible')) hideBulkOperationsView();
+                else if (mcpCenter.classList.contains('visible')) hideMcpCenter();
+            }
+        });
+        
+        // 初始化
+        loadData();
+        renderAllCards();
+        resetUI();
+    });
+    </script>
+</body>
+</html>

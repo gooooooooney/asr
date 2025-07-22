@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TEN VAD 测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .success { background-color: #d4edda; color: #155724; }
+        .error { background-color: #f8d7da; color: #721c24; }
+        .info { background-color: #d1ecf1; color: #0c5460; }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+        }
+        #results {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #f0f0f0;
+            border-radius: 5px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .vad-result {
+            margin: 5px 0;
+            padding: 5px;
+            background: white;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <h1>TEN VAD 测试页面</h1>
+    
+    <div id="status" class="status info">等待初始化...</div>
+    
+    <div>
+        <button id="loadBtn">1. 加载 TEN VAD</button>
+        <button id="initBtn" disabled>2. 初始化 VAD</button>
+        <button id="startBtn" disabled>3. 开始录音</button>
+        <button id="stopBtn" disabled>停止录音</button>
+    </div>
+    
+    <div id="results">
+        <h3>VAD 检测结果：</h3>
+        <div id="resultList"></div>
+    </div>
+
+    <script>
+        let vadModule = null;
+        let vadHandle = null;
+        let vadHandlePtr = null;
+        let audioContext = null;
+        let microphone = null;
+        let scriptProcessor = null;
+        let isRecording = false;
+        
+        const HOP_SIZE = 256;
+        const THRESHOLD = 0.5;
+        const SAMPLE_RATE = 16000;
+        
+        const statusDiv = document.getElementById('status');
+        const resultList = document.getElementById('resultList');
+        
+        function updateStatus(message, type = 'info') {
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+            console.log(`[${type}] ${message}`);
+        }
+        
+        function addResult(message) {
+            const div = document.createElement('div');
+            div.className = 'vad-result';
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            resultList.appendChild(div);
+            resultList.scrollTop = resultList.scrollHeight;
+        }
+        
+        // 1. 加载 TEN VAD 模块
+        document.getElementById('loadBtn').addEventListener('click', async () => {
+            try {
+                updateStatus('正在加载 TEN VAD 模块...', 'info');
+                
+                // 动态加载脚本
+                const script = document.createElement('script');
+                script.src = 'public/ten_vad_loader.js';
+                
+                await new Promise((resolve, reject) => {
+                    script.onload = resolve;
+                    script.onerror = reject;
+                    document.head.appendChild(script);
+                });
+                
+                // 等待 createVADModule 可用
+                if (typeof createVADModule === 'undefined') {
+                    throw new Error('createVADModule 未定义');
+                }
+                
+                // 创建模块实例
+                vadModule = await createVADModule({
+                    locateFile: (filename) => {
+                        if (filename === 'ten_vad.wasm') {
+                            return 'public/ten_vad.wasm';
+                        }
+                        return filename;
+                    }
+                });
+                
+                // 添加辅助函数
+                if (!vadModule.getValue) {
+                    vadModule.getValue = (ptr, type) => {
+                        switch (type) {
+                            case 'i32': return vadModule.HEAP32[ptr >> 2];
+                            case 'float': return vadModule.HEAPF32[ptr >> 2];
+                            default: throw new Error(`Unsupported type: ${type}`);
+                        }
+                    };
+                }
+                
+                updateStatus('TEN VAD 模块加载成功！', 'success');
+                document.getElementById('initBtn').disabled = false;
+                
+            } catch (error) {
+                updateStatus(`加载失败: ${error.message}`, 'error');
+                console.error(error);
+            }
+        });
+        
+        // 2. 初始化 VAD 实例
+        document.getElementById('initBtn').addEventListener('click', () => {
+            try {
+                updateStatus('正在初始化 VAD 实例...', 'info');
+                
+                vadHandlePtr = vadModule._malloc(4);
+                const result = vadModule._ten_vad_create(vadHandlePtr, HOP_SIZE, THRESHOLD);
+                
+                if (result === 0) {
+                    vadHandle = vadModule.getValue(vadHandlePtr, 'i32');
+                    updateStatus('VAD 实例创建成功！', 'success');
+                    document.getElementById('startBtn').disabled = false;
+                    
+                    // 获取版本信息
+                    try {
+                        const versionPtr = vadModule._ten_vad_get_version();
+                        const version = vadModule.UTF8ToString(versionPtr);
+                        addResult(`TEN VAD 版本: ${version}`);
+                    } catch (e) {
+                        addResult('TEN VAD 版本: 未知');
+                    }
+                } else {
+                    throw new Error(`VAD 创建失败，错误代码: ${result}`);
+                }
+            } catch (error) {
+                updateStatus(`初始化失败: ${error.message}`, 'error');
+                console.error(error);
+            }
+        });
+        
+        // 3. 开始录音
+        document.getElementById('startBtn').addEventListener('click', async () => {
+            try {
+                updateStatus('正在启动录音...', 'info');
+                
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                    sampleRate: SAMPLE_RATE
+                });
+                
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                        sampleRate: SAMPLE_RATE
+                    }
+                });
+                
+                microphone = audioContext.createMediaStreamSource(stream);
+                scriptProcessor = audioContext.createScriptProcessor(HOP_SIZE * 2, 1, 1);
+                
+                let audioBuffer = [];
+                let isSpeaking = false;
+                
+                scriptProcessor.onaudioprocess = (e) => {
+                    if (!isRecording) return;
+                    
+                    const channelData = e.inputBuffer.getChannelData(0);
+                    
+                    // Convert float32 to int16
+                    const int16Data = new Int16Array(channelData.length);
+                    for (let i = 0; i < channelData.length; i++) {
+                        const s = Math.max(-1, Math.min(1, channelData[i]));
+                        int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                    }
+                    
+                    audioBuffer.push(...int16Data);
+                    
+                    // Process when we have enough samples
+                    while (audioBuffer.length >= HOP_SIZE) {
+                        const frameData = new Int16Array(audioBuffer.splice(0, HOP_SIZE));
+                        
+                        // Process with VAD
+                        const audioPtr = vadModule._malloc(HOP_SIZE * 2);
+                        const probPtr = vadModule._malloc(4);
+                        const flagPtr = vadModule._malloc(4);
+                        
+                        try {
+                            vadModule.HEAP16.set(frameData, audioPtr / 2);
+                            
+                            const result = vadModule._ten_vad_process(
+                                vadHandle, audioPtr, HOP_SIZE, probPtr, flagPtr
+                            );
+                            
+                            if (result === 0) {
+                                const probability = vadModule.getValue(probPtr, 'float');
+                                const voiceFlag = vadModule.getValue(flagPtr, 'i32');
+                                
+                                if (voiceFlag === 1 && !isSpeaking) {
+                                    isSpeaking = true;
+                                    addResult(`🎤 检测到语音开始 (概率: ${probability.toFixed(3)})`);
+                                } else if (voiceFlag === 0 && isSpeaking) {
+                                    isSpeaking = false;
+                                    addResult(`🔇 检测到语音结束 (概率: ${probability.toFixed(3)})`);
+                                }
+                            }
+                        } finally {
+                            vadModule._free(audioPtr);
+                            vadModule._free(probPtr);
+                            vadModule._free(flagPtr);
+                        }
+                    }
+                };
+                
+                microphone.connect(scriptProcessor);
+                scriptProcessor.connect(audioContext.destination);
+                
+                isRecording = true;
+                updateStatus('录音中... 请说话测试VAD', 'success');
+                document.getElementById('startBtn').disabled = true;
+                document.getElementById('stopBtn').disabled = false;
+                
+            } catch (error) {
+                updateStatus(`录音失败: ${error.message}`, 'error');
+                console.error(error);
+            }
+        });
+        
+        // 停止录音
+        document.getElementById('stopBtn').addEventListener('click', () => {
+            isRecording = false;
+            
+            if (scriptProcessor) {
+                scriptProcessor.disconnect();
+                scriptProcessor = null;
+            }
+            
+            if (microphone) {
+                microphone.disconnect();
+                microphone = null;
+            }
+            
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            
+            updateStatus('录音已停止', 'info');
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+        });
+    </script>
+</body>
+</html>

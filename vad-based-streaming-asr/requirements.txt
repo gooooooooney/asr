@@ -1,0 +1,29 @@
+# Core async and WebSocket support
+asyncio
+websockets
+
+# HTTP server (built-in)
+# No additional dependency needed
+
+# Scientific computing and audio processing
+numpy
+
+# HTTP requests
+requests
+
+# Standard library modules (no pip install needed)
+# - json
+# - time
+# - wave
+# - tempfile
+# - logging
+# - sys
+# - datetime
+# - shutil
+# - os
+# - threading
+# - http.server
+
+# Note: The code also references 'ten_vad' module which appears to be 
+# a custom WebAssembly module located in '../ten-vad/include/ten_vad'
+# This is not available via pip and needs to be installed separately

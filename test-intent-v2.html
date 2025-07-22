@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>意图识别测试 V2</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .panel {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            grid-column: 1 / -1;
+            text-align: center;
+            color: #333;
+        }
+        textarea {
+            width: 100%;
+            min-height: 200px;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            resize: vertical;
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        button {
+            flex: 1;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .primary {
+            background: #4CAF50;
+            color: white;
+        }
+        .primary:hover {
+            background: #45a049;
+        }
+        .secondary {
+            background: #2196F3;
+            color: white;
+        }
+        .secondary:hover {
+            background: #0b7dda;
+        }
+        .danger {
+            background: #f44336;
+            color: white;
+        }
+        .danger:hover {
+            background: #da190b;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f0f0f0;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .history-item {
+            padding: 10px;
+            margin: 5px 0;
+            background: #f9f9f9;
+            border-radius: 4px;
+            border-left: 3px solid #4CAF50;
+        }
+        .api-key-input {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .status {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 14px;
+            margin-left: 10px;
+        }
+        .connected {
+            background: #d4edda;
+            color: #155724;
+        }
+        .disconnected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <h1>意图识别测试 V2</h1>
+    
+    <div class="container">
+        <div class="panel">
+            <h2>测试输入</h2>
+            <textarea id="testInput" placeholder="输入测试文本，例如：
+- 搜索最新的AI技术新闻
+- 帮我查找昨天的会议记录
+- 提醒我下午3点开会
+- 这个项目的进展如何"></textarea>
+            
+            <div class="button-group">
+                <button class="primary" onclick="testIntent('char')">字符触发测试</button>
+                <button class="secondary" onclick="testIntent('silence')">静默触发测试</button>
+                <button class="danger" onclick="clearHistory()">清除历史</button>
+            </div>
+            
+            <h3>API配置 <span id="connectionStatus" class="status disconnected">未连接</span></h3>
+            <input type="password" id="apiKey" class="api-key-input" placeholder="输入 Gemini API Key">
+            <button class="primary" onclick="saveApiKey()">保存并测试连接</button>
+        </div>
+        
+        <div class="panel">
+            <h2>测试结果</h2>
+            <div id="result" class="result">等待测试...</div>
+            
+            <h3>搜索历史</h3>
+            <div id="history"></div>
+        </div>
+    </div>
+    
+    <div class="panel" style="margin-top: 20px;">
+        <h2>详细日志</h2>
+        <div id="logs" class="result" style="height: 300px;">日志输出...</div>
+    </div>
+
+    <script type="module">
+        import { GeminiIntentDetector } from './meeting-tool/src/geminiIntentDetector.js';
+        
+        const detector = new GeminiIntentDetector();
+        const logsDiv = document.getElementById('logs');
+        const resultDiv = document.getElementById('result');
+        const historyDiv = document.getElementById('history');
+        const statusSpan = document.getElementById('connectionStatus');
+        
+        // 重写 console.log 以捕获日志
+        const originalLog = console.log;
+        const originalError = console.error;
+        const originalWarn = console.warn;
+        
+        function addLog(type, ...args) {
+            const timestamp = new Date().toLocaleTimeString();
+            const message = args.map(arg => 
+                typeof arg === 'object' ? JSON.stringify(arg, null, 2) : arg
+            ).join(' ');
+            
+            logsDiv.innerHTML += `<div class="${type}">[${timestamp}] ${message}</div>`;
+            logsDiv.scrollTop = logsDiv.scrollHeight;
+            
+            // 调用原始方法
+            if (type === 'log') originalLog.apply(console, args);
+            else if (type === 'error') originalError.apply(console, args);
+            else if (type === 'warn') originalWarn.apply(console, args);
+        }
+        
+        console.log = (...args) => addLog('log', ...args);
+        console.error = (...args) => addLog('error', ...args);
+        console.warn = (...args) => addLog('warn', ...args);
+        
+        // 监听意图事件
+        detector.on('intent', (data) => {
+            console.log('收到意图事件:', data);
+            showResult(data, 'success');
+        });
+        
+        // 加载保存的 API Key
+        const savedKey = localStorage.getItem('gemini_api_key');
+        if (savedKey) {
+            document.getElementById('apiKey').value = savedKey;
+            detector.setGeminiApiKey(savedKey);
+            testConnection();
+        }
+        
+        // 测试意图识别
+        window.testIntent = async function(triggerType) {
+            const text = document.getElementById('testInput').value;
+            if (!text) {
+                showResult('请输入测试文本', 'error');
+                return;
+            }
+            
+            console.log(`开始测试意图识别 - 触发类型: ${triggerType}`);
+            console.log(`输入文本: "${text}"`);
+            console.log(`文本长度: ${text.length}`);
+            
+            resultDiv.innerHTML = '正在处理...';
+            
+            try {
+                // 打印当前状态
+                console.log('当前检测器状态:', {
+                    lastProcessedIndex: detector.lastProcessedIndex,
+                    lastProcessedText: detector.lastProcessedText,
+                    searchHistory: detector.searchHistory,
+                    apiKey: detector.geminiApiKey ? '已设置' : '未设置'
+                });
+                
+                const result = await detector.detectIntent(text, triggerType);
+                
+                if (result) {
+                    console.log('意图识别成功:', result);
+                    showResult(result, 'success');
+                } else {
+                    console.log('未检测到意图');
+                    showResult('未检测到明确意图', 'info');
+                }
+                
+                updateHistory();
+            } catch (error) {
+                console.error('意图识别失败:', error);
+                showResult(`错误: ${error.message}`, 'error');
+            }
+        };
+        
+        // 保存 API Key
+        window.saveApiKey = function() {
+            const apiKey = document.getElementById('apiKey').value;
+            if (!apiKey) {
+                showResult('请输入 API Key', 'error');
+                return;
+            }
+            
+            localStorage.setItem('gemini_api_key', apiKey);
+            detector.setGeminiApiKey(apiKey);
+            console.log('API Key 已保存');
+            
+            testConnection();
+        };
+        
+        // 测试连接
+        async function testConnection() {
+            try {
+                statusSpan.textContent = '连接中...';
+                statusSpan.className = 'status disconnected';
+                
+                await detector.testConnection();
+                
+                statusSpan.textContent = '已连接';
+                statusSpan.className = 'status connected';
+                console.log('API 连接测试成功');
+            } catch (error) {
+                statusSpan.textContent = '连接失败';
+                statusSpan.className = 'status disconnected';
+                console.error('API 连接测试失败:', error);
+            }
+        }
+        
+        // 清除历史
+        window.clearHistory = function() {
+            detector.clearHistory();
+            updateHistory();
+            console.log('搜索历史已清除');
+        };
+        
+        // 显示结果
+        function showResult(data, type = 'info') {
+            let html = '';
+            
+            if (typeof data === 'object') {
+                html = `
+                    <strong>意图识别结果：</strong><br>
+                    类型: ${data.type}<br>
+                    子类型: ${data.subType}<br>
+                    查询: ${data.query}<br>
+                    置信度: ${data.confidence}<br>
+                    触发方式: ${data.triggerType}<br>
+                    原始文本: ${data.originalText}
+                `;
+            } else {
+                html = data;
+            }
+            
+            resultDiv.className = `result ${type}`;
+            resultDiv.innerHTML = html;
+        }
+        
+        // 更新历史记录
+        function updateHistory() {
+            const history = detector.getSearchHistory();
+            
+            if (history.length === 0) {
+                historyDiv.innerHTML = '<div class="history-item">暂无搜索历史</div>';
+                return;
+            }
+            
+            historyDiv.innerHTML = history.map((item, index) => `
+                <div class="history-item">
+                    <strong>#${index + 1}</strong> [${item.type}] "${item.query}"<br>
+                    <small>${new Date(item.timestamp).toLocaleString()}</small>
+                </div>
+            `).join('');
+        }
+        
+        // 初始化
+        updateHistory();
+        console.log('意图识别测试 V2 已加载');
+        
+        // 添加一些测试用例
+        const testCases = [
+            "搜索最新的AI技术新闻",
+            "帮我查找昨天的会议记录",
+            "提醒我下午3点开会",
+            "这个项目的进展如何",
+            "我想了解量子计算的最新进展",
+            "昨天我们讨论的方案在哪里",
+            "设置一个明天上午10点的提醒"
+        ];
+        
+        console.log('测试用例建议:', testCases);
+    </script>
+</body>
+</html>

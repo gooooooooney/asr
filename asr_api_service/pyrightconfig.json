@@ -1,0 +1,32 @@
+{
+    "include": [
+        "src"
+    ],
+    "exclude": [
+        "**/node_modules",
+        "**/__pycache__",
+        "**/*.pyc",
+        "**/.*"
+    ],
+    "stubPath": "typings",
+    "venv": "venv",
+    "venvPath": ".",
+    "executionEnvironments": [
+        {
+            "root": "src",
+            "pythonVersion": "3.9",
+            "pythonPlatform": "Darwin",
+            "extraPaths": [
+                "src"
+            ]
+        }
+    ],
+    "typeCheckingMode": "basic",
+    "useLibraryCodeForTypes": true,
+    "reportMissingImports": "warning",
+    "reportMissingTypeStubs": false,
+    "reportUnusedImport": "warning",
+    "reportUnusedClass": "warning",
+    "reportUnusedFunction": "warning",
+    "reportUnusedVariable": "warning"
+}

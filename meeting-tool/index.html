@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>会议助手</title>
+    <link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+    <div class="container">
+        <h1>智能会议助手</h1>
+        
+        <div class="controls">
+            <button id="startBtn" class="btn btn-primary">开始录音</button>
+            <button id="stopBtn" class="btn btn-danger" disabled>停止录音</button>
+            <button id="settingsBtn" class="btn btn-secondary">设置</button>
+            <div class="status">
+                <span id="recordingStatus">未开始</span>
+                <span id="vadStatus" class="vad-indicator">VAD: 静音</span>
+            </div>
+        </div>
+        
+        <div id="settingsPanel" class="settings-panel" style="display: none;">
+            <h3>设置</h3>
+            <div class="setting-item">
+                <label for="geminiApiKey">Gemini API Key:</label>
+                <input type="password" id="geminiApiKey" placeholder="输入你的Gemini API密钥">
+            </div>
+            <div class="setting-item">
+                <button id="saveSettings" class="btn btn-primary">保存设置</button>
+                <button id="closeSettings" class="btn btn-secondary">关闭</button>
+            </div>
+        </div>
+
+        <div class="transcription-container">
+            <h2>实时转录</h2>
+            <div id="transcription" class="transcription-box"></div>
+        </div>
+
+        <div class="function-call-container">
+            <h2>意图识别</h2>
+            <div id="functionCalls" class="function-call-box"></div>
+        </div>
+
+        <div class="search-history-container">
+            <h2>搜索历史（去重用）</h2>
+            <div id="searchHistory" class="search-history-box">
+                <div class="history-placeholder">暂无搜索历史</div>
+            </div>
+        </div>
+
+        <div class="search-results-container">
+            <h2>搜索结果</h2>
+            <div id="searchResults" class="search-results-box"></div>
+        </div>
+    </div>
+
+    <script src="src/app.js" type="module"></script>
+</body>
+</html>
