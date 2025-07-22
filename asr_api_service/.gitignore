@@ -76,7 +76,6 @@ Desktop.ini
 data/
 logs/
 temp/
-audio/
 *.wav
 *.mp3
 *.mp4
