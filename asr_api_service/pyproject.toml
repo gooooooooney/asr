@@ -1,17 +1,14 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
 
-[project]
+[tool.poetry]
 name = "asr-api-service"
-dynamic = ["version"]
+version = "0.1.0"
 description = "Modern ASR API Service with VAD and streaming capabilities"
+authors = ["Meeting Code Team <team@meetingcode.dev>"]
 readme = "README.md"
-license = {file = "LICENSE"}
-requires-python = ">=3.9"
-authors = [
-    {name = "Meeting Code Team", email = "team@meetingcode.dev"},
-]
+license = "MIT"
 keywords = ["asr", "vad", "speech-recognition", "api", "fastapi"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -29,65 +26,62 @@ classifiers = [
     "Topic :: Multimedia :: Sound/Audio :: Speech",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
+packages = [{include = "asr_api_service", from = "src"}]
+homepage = "https://github.com/meetingcode/asr-api-service"
+repository = "https://github.com/meetingcode/asr-api-service"
+documentation = "https://asr-api-service.readthedocs.io"
 
-dependencies = [
-    "fastapi>=0.104.1",
-    "uvicorn[standard]>=0.24.0",
-    "pydantic>=2.4.0",
-    "pydantic-settings>=2.0.0",
-    "websockets>=12.0",
-    "numpy>=1.24.0",
-    "requests>=2.31.0",
-    "aiofiles>=23.2.1",
-    "python-multipart>=0.0.6",
-    "python-jose[cryptography]>=3.3.0",
-    "passlib[bcrypt]>=1.7.4",
-    "httpx>=0.25.0",
-    "structlog>=23.2.0",
-    "rich>=13.7.0",
-    "typer>=0.9.0",
-    "asyncio-mqtt>=0.16.1",
-    "soundfile>=0.12.1",
-]
+[tool.poetry.dependencies]
+python = ">=3.9,<4.0"
+fastapi = ">=0.104.1"
+uvicorn = {extras = ["standard"], version = ">=0.24.0"}
+pydantic = ">=2.4.0"
+pydantic-settings = ">=2.0.0"
+websockets = ">=12.0"
+numpy = ">=1.24.0"
+requests = ">=2.31.0"
+aiofiles = ">=23.2.1"
+python-multipart = ">=0.0.6"
+python-jose = {extras = ["cryptography"], version = ">=3.3.0"}
+passlib = {extras = ["bcrypt"], version = ">=1.7.4"}
+httpx = ">=0.25.0"
+structlog = ">=23.2.0"
+rich = ">=13.7.0"
+typer = ">=0.9.0"
+asyncio-mqtt = ">=0.16.1"
+soundfile = ">=0.12.1"
+ten-vad = {git = "https://github.com/TEN-framework/ten-vad.git", rev = "501ea8a4213da7af2d1fdc37c37a98fdd7eddc9f"}
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.4.0",
-    "pytest-asyncio>=0.21.0",
-    "pytest-cov>=4.1.0",
-    "black>=23.7.0",
-    "isort>=5.12.0",
-    "flake8>=6.0.0",
-    "mypy>=1.5.0",
-    "pre-commit>=3.4.0",
-    "httpx>=0.25.0",
-]
-docs = [
-    "mkdocs>=1.5.0",
-    "mkdocs-material>=9.2.0",
-    "mkdocstrings[python]>=0.22.0",
-]
-monitoring = [
-    "prometheus-client>=0.17.0",
-    "opentelemetry-api>=1.20.0",
-    "opentelemetry-sdk>=1.20.0",
-    "opentelemetry-instrumentation-fastapi>=0.41b0",
-]
+[tool.poetry.group.dev.dependencies]
+pytest = ">=7.4.0"
+pytest-asyncio = ">=0.21.0"
+pytest-cov = ">=4.1.0"
+black = ">=23.7.0"
+isort = ">=5.12.0"
+flake8 = ">=6.0.0"
+mypy = ">=1.5.0"
+pre-commit = ">=3.4.0"
 
-[project.urls]
-Homepage = "https://github.com/meetingcode/asr-api-service"
-Documentation = "https://asr-api-service.readthedocs.io"
-Repository = "https://github.com/meetingcode/asr-api-service"
-"Bug Tracker" = "https://github.com/meetingcode/asr-api-service/issues"
+[tool.poetry.group.docs]
+optional = true
 
-[project.scripts]
+[tool.poetry.group.docs.dependencies]
+mkdocs = ">=1.5.0"
+mkdocs-material = ">=9.2.0"
+mkdocstrings = {extras = ["python"], version = ">=0.22.0"}
+
+[tool.poetry.group.monitoring]
+optional = true
+
+[tool.poetry.group.monitoring.dependencies]
+prometheus-client = ">=0.17.0"
+opentelemetry-api = ">=1.20.0"
+opentelemetry-sdk = ">=1.20.0"
+opentelemetry-instrumentation-fastapi = ">=0.41b0"
+
+[tool.poetry.scripts]
 asr-api = "asr_api_service.cli:main"
 
-[tool.hatch.version]
-path = "src/asr_api_service/__init__.py"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/asr_api_service"]
 
 [tool.black]
 line-length = 88

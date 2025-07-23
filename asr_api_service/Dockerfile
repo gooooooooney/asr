@@ -5,23 +5,39 @@ FROM python:3.11-slim AS builder
 ENV PYTHONUNBUFFERED=1 \
   PYTHONDONTWRITEBYTECODE=1 \
   PIP_NO_CACHE_DIR=1 \
-  PIP_DISABLE_PIP_VERSION_CHECK=1
+  PIP_DISABLE_PIP_VERSION_CHECK=1 \
+  POETRY_NO_INTERACTION=1 \
+  POETRY_VENV_IN_PROJECT=1 \
+  POETRY_CACHE_DIR=/tmp/poetry_cache
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
   build-essential \
   curl \
+  git \
   && rm -rf /var/lib/apt/lists/*
+
+# Install Poetry
+RUN pip install poetry
 
 # Set work directory
 WORKDIR /app
 
-# Copy source code and configuration
-COPY pyproject.toml LICENSE README.md ./
-COPY src/ ./src/
+# Copy Poetry configuration
+COPY pyproject.toml poetry.lock* ./
 
-# Install Python dependencies
-RUN pip install .
+# Configure Poetry and install dependencies
+RUN poetry config virtualenvs.create true \
+  && poetry config virtualenvs.in-project true \
+  && poetry install --no-dev --no-root \
+  && rm -rf $POETRY_CACHE_DIR
+
+# Copy source code
+COPY src/ ./src/
+COPY LICENSE README.md ./
+
+# Install the application
+RUN poetry install --no-dev
 
 # Production stage
 FROM python:3.11-slim AS production
@@ -42,16 +58,12 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 # Set work directory
 WORKDIR /app
 
-# Copy Python dependencies from builder
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
+# Copy virtual environment from builder
+COPY --from=builder /app/.venv /app/.venv
 
 # Copy application code
 COPY src/ ./src/
 COPY pyproject.toml LICENSE README.md ./
-
-# Install the application
-RUN pip install .
 
 # Create necessary directories
 RUN mkdir -p data/audio data/logs data/temp && \
