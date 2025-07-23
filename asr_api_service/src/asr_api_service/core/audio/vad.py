@@ -82,11 +82,23 @@ class VADProcessor:
         """Initialize TEN-VAD if available."""
         try:
             # Add parent project's ten-vad path to Python path
+            # Path: /Users/caixin/code/projects/meeting_code/asr_api_service/src/asr_api_service/core/audio/vad.py
+            # Target: /Users/caixin/code/projects/meeting_code/ten-vad/include
             current_file = Path(__file__).resolve()
-            ten_vad_path = current_file.parent.parent.parent.parent.parent / "ten-vad" / "include"
+            # Go up to meeting_code directory, then to ten-vad/include
+            ten_vad_path = current_file.parent.parent.parent.parent.parent.parent / "ten-vad" / "include"
+            
+            # Debug path information
+            logger.debug(
+                "TEN-VAD path setup",
+                current_file=str(current_file),
+                ten_vad_path=str(ten_vad_path),
+                path_exists=ten_vad_path.exists(),
+            )
             
             if ten_vad_path.exists() and str(ten_vad_path) not in sys.path:
                 sys.path.insert(0, str(ten_vad_path))
+                logger.info(f"Added TEN-VAD path to sys.path: {ten_vad_path}")
             
             from ten_vad import TenVad
             
@@ -246,9 +258,25 @@ class VADProcessor:
         Returns:
             Tuple of (is_speaking, probability)
         """
-        # Simple threshold-based VAD
-        is_speaking = rms > self.threshold
-        return is_speaking, rms
+        # 动态阈值：使用较低的基础阈值
+        base_threshold = 0.001  # 非常低的基础阈值
+        
+        # 计算音频的统计信息
+        peak = float(np.max(np.abs(audio_array)))
+        
+        # 如果有明显的音频信号，降低阈值
+        if peak > 0.01:  # 如果峰值超过 1%
+            effective_threshold = base_threshold
+        else:
+            effective_threshold = self.threshold
+        
+        # 使用 RMS 和峰值的组合判断
+        is_speaking = rms > effective_threshold or peak > 0.005
+        
+        # 概率计算：使用 RMS 和峰值的加权平均
+        probability = min(1.0, (rms / effective_threshold + peak / 0.01) / 2)
+        
+        return is_speaking, probability
 
     def reset(self) -> None:
         """Reset VAD processor state."""
